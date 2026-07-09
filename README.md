@@ -2,7 +2,7 @@
 
 A privacy-conscious personal AI agent that runs independently on a single Mac or VPS.
 
-The first release will provide a CLI, Todoist task management, source-based web research, approval-gated local shell access, and delegated coding work through OpenCode with DeepSeek. Telegram and retrieval-augmented memory follow after the core safety and tool paths are proven.
+The first release provides a CLI foundation with provider-neutral model fallback, durable approval checkpoints, and audited persistence. Todoist, source-based web research, approval-gated Docker execution, OpenCode, Telegram polling, and retrieval-augmented memory follow in later phases.
 
 ## Architecture
 
@@ -28,6 +28,7 @@ src/personal_agent/
   core/         Shared contracts and domain types
   graph/        LangGraph state and nodes
   models/       PydanticAI model workers
+  observability/ Structured logging and secret redaction
   persistence/  SQLite repositories and audit storage
   policy/       Approval and capability enforcement
   tools/        Audited tool adapters
@@ -50,4 +51,4 @@ uv run ruff check .
 
 Set only the integrations you intend to use. Startup validation requires credentials only for integrations whose `enabled` flag is `true`.
 
-P0 implementation is underway. Typed settings and audited SQLite persistence are complete; the remaining safe-core work is tracked in the backlog.
+P0 is complete. Start a session with `personal-agent session start`, submit work with `personal-agent run`, and resume paused runs with `personal-agent approve` or `personal-agent deny`. Tool integrations begin in P1.

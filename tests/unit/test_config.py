@@ -1,10 +1,18 @@
 """Tests for startup configuration validation."""
 
 import pytest
-from pydantic import ValidationError
+from pydantic import SecretStr, ValidationError
 from pydantic_settings import SettingsConfigDict
 
-from personal_agent.core.config import Environment, SandboxBackend, Settings
+from personal_agent.core.config import (
+    CoordinatorSettings,
+    DeepSeekSettings,
+    Environment,
+    ModelTarget,
+    OpenAISettings,
+    SandboxBackend,
+    Settings,
+)
 
 
 class SettingsWithoutDotEnv(Settings):
@@ -25,10 +33,17 @@ def clear_agent_environment(monkeypatch: pytest.MonkeyPatch) -> None:
         "PERSONAL_AGENT_ENVIRONMENT",
         "PERSONAL_AGENT_DATABASE_URL",
         "PERSONAL_AGENT_DATA_DIR",
+        "PERSONAL_AGENT_CHECKPOINT_PATH",
         "PERSONAL_AGENT_POLICY_PATH",
         "PERSONAL_AGENT_LOG_LEVEL",
+        "PERSONAL_AGENT_LOG_FORMAT",
+        "PERSONAL_AGENT_LOG_REDACTED_FIELDS",
         "PERSONAL_AGENT_OPENAI__ENABLED",
         "PERSONAL_AGENT_OPENAI__API_KEY",
+        "PERSONAL_AGENT_DEEPSEEK__ENABLED",
+        "PERSONAL_AGENT_DEEPSEEK__API_KEY",
+        "PERSONAL_AGENT_COORDINATOR__ENABLED",
+        "PERSONAL_AGENT_COORDINATOR__MODELS",
         "PERSONAL_AGENT_TODOIST__ENABLED",
         "PERSONAL_AGENT_TODOIST__API_TOKEN",
         "PERSONAL_AGENT_TELEGRAM__ENABLED",
@@ -62,6 +77,11 @@ def test_defaults_leave_optional_integrations_disabled() -> None:
             "PERSONAL_AGENT_TODOIST__ENABLED",
             "PERSONAL_AGENT_TODOIST__API_TOKEN",
             "todoist.api_token",
+        ),
+        (
+            "PERSONAL_AGENT_DEEPSEEK__ENABLED",
+            "PERSONAL_AGENT_DEEPSEEK__API_KEY",
+            "deepseek.api_key",
         ),
     ],
 )
@@ -113,3 +133,32 @@ def test_enabled_integrations_load_from_nested_environment_variables(
     assert settings.local_execution.enabled is True
     assert settings.local_execution.workspace_root.name == "agent-workspaces"
     assert settings.local_execution.sandbox_backend is SandboxBackend.DOCKER
+
+
+def test_coordinator_requires_models_and_enabled_builtin_providers() -> None:
+    with pytest.raises(ValidationError, match="coordinator.models"):
+        SettingsWithoutDotEnv(coordinator=CoordinatorSettings(enabled=True))
+
+    with pytest.raises(ValidationError, match="openai must be enabled"):
+        SettingsWithoutDotEnv(
+            coordinator=CoordinatorSettings(
+                enabled=True,
+                models=[ModelTarget(provider="openai", model="test-model")],
+            )
+        )
+
+    settings = SettingsWithoutDotEnv(
+        openai=OpenAISettings(enabled=True, api_key=SecretStr("secret")),
+        deepseek=DeepSeekSettings(enabled=True, api_key=SecretStr("secret")),
+        coordinator=CoordinatorSettings(
+            enabled=True,
+            models=[
+                ModelTarget(provider="openai", model="primary"),
+                ModelTarget(provider="deepseek", model="fallback"),
+            ],
+        ),
+    )
+    assert [target.provider for target in settings.coordinator.models] == [
+        "openai",
+        "deepseek",
+    ]

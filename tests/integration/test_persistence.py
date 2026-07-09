@@ -1,8 +1,6 @@
 """Integration tests for SQLite migrations and audited repositories."""
 
-from collections.abc import AsyncIterator
 from datetime import timedelta
-from pathlib import Path
 from uuid import UUID, uuid4
 
 import pytest
@@ -20,15 +18,6 @@ from personal_agent.persistence.models import (
     WorkflowRunModel,
     utc_now,
 )
-
-
-@pytest.fixture
-async def database(tmp_path: Path) -> AsyncIterator[Database]:
-    database_path = tmp_path / "personal_agent.sqlite3"
-    instance = Database(f"sqlite+aiosqlite:///{database_path}")
-    await instance.initialize()
-    yield instance
-    await instance.dispose()
 
 
 async def test_migrations_are_idempotent(database: Database) -> None:

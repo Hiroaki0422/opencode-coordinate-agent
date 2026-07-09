@@ -10,20 +10,20 @@ Items are ordered by dependency and user value. An item is complete only when it
   - Supports portable single-host settings and rejects missing required secrets at startup.
 - [x] Create SQLite migrations and repositories for sessions, approvals, workflow runs, and audit events.
   - Creates a fresh database and records an immutable audit event transactionally with each state-changing request.
-- [ ] Add structured logging with redaction.
+- [x] Add structured logging with redaction.
   - Never emits tokens, authorization headers, or configured secret fields.
-- [ ] Establish test fixtures, linting, typing, and CI.
+- [x] Establish test fixtures, linting, typing, and CI.
   - Unit tests run offline; formatting, linting, and strict type checks run in CI.
 
 ### Policy and orchestration
 
-- [ ] Implement capability requests, approvals, expiry, and revocation.
+- [x] Implement capability requests, approvals, expiry, and revocation.
   - A write request succeeds only with a matching active session grant; risky requests always create a new approval request.
-- [ ] Create the LangGraph state, checkpoint store, and pause/resume approval node.
+- [x] Create the LangGraph state, checkpoint store, and pause/resume approval node.
   - A paused run resumes from its persisted checkpoint without repeating a completed effect.
-- [ ] Add the OpenAI coordinator through PydanticAI.
-  - Produces typed plans and tool requests; cannot invoke a tool outside the gateway.
-- [ ] Add a CLI transport.
+- [x] Add the provider-neutral coordinator through PydanticAI.
+  - Produces typed plans and tool requests, supports ordered provider fallbacks, and cannot invoke a tool outside the gateway.
+- [x] Add a CLI transport.
   - Supports starting a session, submitting a request, viewing a pending approval, approving/denying it, and inspecting a run.
 
 ## P1 — Useful cloud tools
@@ -59,7 +59,7 @@ Items are ordered by dependency and user value. An item is complete only when it
 
 ## P4 — Telegram and operational polish
 
-- [ ] Add Telegram webhook authentication and user/chat allowlists.
+- [ ] Add Telegram long-polling authentication and user/chat allowlists.
   - Rejects messages outside the configured account and routes approvals through one-time action tokens.
 - [ ] Render approvals and local-execution progress for Telegram.
   - Shows the tool, resource, effect, reason, expiry, and approve/deny controls.

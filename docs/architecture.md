@@ -2,7 +2,7 @@
 
 ## Purpose
 
-V1 is a permission-gated personal AI agent that runs as one independent installation on either a Mac or a VPS. Each installation owns its own state, local workspace, tools, and credentials. It supports OpenAI for planning and synthesis, DeepSeek through OpenCode for coding work, CLI and later Telegram entry points, Todoist tasks, web research, and approval-gated local actions.
+V1 is a permission-gated personal AI agent that runs as one independent installation on either a Mac or a VPS. Each installation owns its own state, local workspace, tools, and credentials. It supports an ordered, provider-neutral model route for planning and synthesis, DeepSeek through OpenCode for coding work, CLI and later Telegram entry points, Todoist tasks, web research, and approval-gated local actions.
 
 V1 deliberately does not synchronize sessions, files, approvals, or jobs between hosts. Cross-host coordination is a v2 concern.
 
@@ -17,7 +17,7 @@ V1 deliberately does not synchronize sessions, files, approvals, or jobs between
 ## Deployment topology
 
 ```text
-CLI / SSH / optional Telegram
+CLI / SSH / optional Telegram polling
              |
              v
 single-host runtime
@@ -33,7 +33,7 @@ approved host-local workspaces
 
 Run the same application on a Mac for local coding and files, or on a VPS for always-on access and Telegram. A Mac may use the CLI and local tools; a VPS may use SSH, an HTTP service, and Telegram. There is no dependency between the two deployments.
 
-SQLite stores sessions, approvals, workflow checkpoints, tool/audit events, task metadata, and memory indexes for one installation. Move to PostgreSQL only when a single host needs concurrent processes or higher availability.
+SQLite stores sessions, approvals, tool/audit events, task metadata, and memory indexes for one installation. LangGraph uses a separate SQLite checkpoint file so interrupted runs can resume across process restarts. Move to PostgreSQL only when a single host needs concurrent processes or higher availability.
 
 ## Application layers
 
@@ -43,7 +43,7 @@ SQLite stores sessions, approvals, workflow checkpoints, tool/audit events, task
 | Session | Authenticate the user and create or resume a bounded session. | `core`, `persistence` |
 | Policy | Convert requested effects into allow, deny, or approval-required decisions. | `policy` |
 | Orchestration | Maintain agent state, route work, checkpoint, pause, resume, and verify results. | `graph` |
-| Model workers | Plan, research, and summarize through OpenAI; create typed requests and results. | `models` |
+| Model workers | Route across configured providers; create typed requests and results. | `models` |
 | Tool gateway | Validate parameters, invoke adapters, return structured evidence, and emit audit events. | `tools` |
 | Local execution | Run approved shell, workspace, and OpenCode actions on the current host. | `execution` |
 | Persistence | Store durable domain data, checkpoints, audit events, and evaluation run results. | `persistence` |
@@ -62,7 +62,7 @@ ingress -> session -> classify -> plan -> policy check
 execute local tool -> verify -> persist evidence -> response
 ```
 
-The initial graph has a single OpenAI coordinator. It delegates only when a task matches a concrete capability:
+The initial graph has one coordinator backed by an ordered model fallback route. It delegates only when a task matches a concrete capability:
 
 - **Research:** call the web-research tool, synthesize findings, and preserve source links.
 - **Tasks:** call the Todoist adapter through the tool gateway.
@@ -74,11 +74,11 @@ This is intentionally not a free-form multi-agent conversation. Graph edges and 
 
 | Role | Provider | Authority |
 | --- | --- | --- |
-| Coordinator | OpenAI via PydanticAI | Read context, propose plans, request approved tools, compose final replies. |
-| Research worker | OpenAI via PydanticAI | Request web research and cite sources; no direct writes. |
+| Coordinator | Ordered providers via PydanticAI | Read context, propose plans, request approved tools, compose final replies. |
+| Research worker | Configured provider route | Request web research and cite sources; no direct writes. |
 | Coding adapter | OpenCode with DeepSeek | Modify only the current host's approved workspace; report evidence. |
 
-PydanticAI models produce validated request schemas. LangGraph selects the node and manages run state. A model cannot call the filesystem, Todoist, or OpenCode directly; those effects always go through the tool gateway and policy engine.
+PydanticAI models produce validated request schemas. Provider builders are registered by name, and an ordered fallback route moves to the next model when a provider API fails. LangGraph selects the node and manages run state. A model cannot call the filesystem, Todoist, or OpenCode directly; those effects always go through the tool gateway and policy engine.
 
 ## Permissions
 

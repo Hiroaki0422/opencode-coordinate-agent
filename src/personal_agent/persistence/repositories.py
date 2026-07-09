@@ -7,6 +7,7 @@ from datetime import datetime
 from typing import Any, Self
 from uuid import UUID, uuid4
 
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from personal_agent.core.types import ActionRequest, ApprovalGrant
@@ -104,6 +105,27 @@ class ApprovalRepository:
     async def get_request(self, request_id: UUID) -> ApprovalRequestModel | None:
         return await self._session.get(ApprovalRequestModel, str(request_id))
 
+    async def get_request_by_action_id(
+        self, action_id: UUID
+    ) -> ApprovalRequestModel | None:
+        result = await self._session.execute(
+            select(ApprovalRequestModel).where(
+                ApprovalRequestModel.action_id == str(action_id)
+            )
+        )
+        return result.scalar_one_or_none()
+
+    async def list_pending_requests(
+        self, *, session_id: UUID | None = None
+    ) -> list[ApprovalRequestModel]:
+        statement = select(ApprovalRequestModel).where(
+            ApprovalRequestModel.status == ApprovalRequestStatus.PENDING.value
+        )
+        if session_id is not None:
+            statement = statement.where(ApprovalRequestModel.session_id == str(session_id))
+        result = await self._session.execute(statement.order_by(ApprovalRequestModel.created_at))
+        return list(result.scalars())
+
     async def resolve_request(
         self, request_id: UUID, status: ApprovalRequestStatus
     ) -> ApprovalRequestModel:
@@ -148,6 +170,21 @@ class ApprovalRepository:
         self._tracker.state_changes += 1
         return model
 
+    async def get_grant(self, grant_id: UUID) -> ApprovalGrantModel | None:
+        return await self._session.get(ApprovalGrantModel, str(grant_id))
+
+    async def list_active_grants(
+        self, *, session_id: UUID, at: datetime
+    ) -> list[ApprovalGrantModel]:
+        result = await self._session.execute(
+            select(ApprovalGrantModel).where(
+                ApprovalGrantModel.session_id == str(session_id),
+                ApprovalGrantModel.revoked_at.is_(None),
+                ApprovalGrantModel.expires_at > at,
+            )
+        )
+        return list(result.scalars())
+
 
 class WorkflowRunRepository:
     def __init__(self, session: AsyncSession, tracker: _ChangeTracker) -> None:
@@ -179,6 +216,14 @@ class WorkflowRunRepository:
 
     async def get(self, run_id: UUID) -> WorkflowRunModel | None:
         return await self._session.get(WorkflowRunModel, str(run_id))
+
+    async def list_for_session(self, session_id: UUID) -> list[WorkflowRunModel]:
+        result = await self._session.execute(
+            select(WorkflowRunModel)
+            .where(WorkflowRunModel.session_id == str(session_id))
+            .order_by(WorkflowRunModel.created_at.desc())
+        )
+        return list(result.scalars())
 
     async def update_status(
         self,
