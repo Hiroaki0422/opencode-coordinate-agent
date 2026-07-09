@@ -46,7 +46,7 @@ class MacWorkerSettings(BaseModel):
 
     enabled: bool = False
     shared_secret: SecretStr | None = None
-    workspace_root: Path = Path("~/agent-workspaces")
+    workspace_root: Path = Field(default=Path("~/agent-workspaces"), validate_default=True)
 
     @field_validator("workspace_root", mode="after")
     @classmethod
@@ -107,7 +107,9 @@ class Settings(BaseSettings):
             if self.telegram.bot_token is None:
                 raise ValueError("telegram.bot_token is required when telegram.enabled is true")
             if not self.telegram.allowed_chat_ids:
-                raise ValueError("telegram.allowed_chat_ids is required when telegram.enabled is true")
+                raise ValueError(
+                    "telegram.allowed_chat_ids is required when telegram.enabled is true"
+                )
         if self.mac_worker.enabled and self.mac_worker.shared_secret is None:
             raise ValueError(
                 "mac_worker.shared_secret is required when mac_worker.enabled is true"

@@ -44,7 +44,11 @@ def test_defaults_leave_optional_integrations_disabled() -> None:
     ("enabled_variable", "missing_secret", "expected_message"),
     [
         ("PERSONAL_AGENT_OPENAI__ENABLED", "PERSONAL_AGENT_OPENAI__API_KEY", "openai.api_key"),
-        ("PERSONAL_AGENT_TODOIST__ENABLED", "PERSONAL_AGENT_TODOIST__API_TOKEN", "todoist.api_token"),
+        (
+            "PERSONAL_AGENT_TODOIST__ENABLED",
+            "PERSONAL_AGENT_TODOIST__API_TOKEN",
+            "todoist.api_token",
+        ),
         (
             "PERSONAL_AGENT_MAC_WORKER__ENABLED",
             "PERSONAL_AGENT_MAC_WORKER__SHARED_SECRET",
