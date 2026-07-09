@@ -19,6 +19,12 @@ class Environment(StrEnum):
     PRODUCTION = "production"
 
 
+class SandboxBackend(StrEnum):
+    """Supported isolation backends for host-local execution."""
+
+    DOCKER = "docker"
+
+
 class OpenAISettings(BaseModel):
     """Configuration for the coordinator and research model provider."""
 
@@ -46,6 +52,8 @@ class LocalExecutionSettings(BaseModel):
 
     enabled: bool = False
     workspace_root: Path = Field(default=Path("~/agent-workspaces"), validate_default=True)
+    sandbox_backend: SandboxBackend = SandboxBackend.DOCKER
+    docker_image: str = "personal-agent-sandbox:latest"
 
     @field_validator("workspace_root", mode="after")
     @classmethod

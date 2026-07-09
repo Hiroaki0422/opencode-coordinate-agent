@@ -96,7 +96,8 @@ An approval grant records the session, tool, operation, resource pattern, risk l
 
 - New repositories may be created only under the configured agent workspace root, for example `~/agent-workspaces`.
 - Existing repositories require an explicit path in the session grant.
-- Coding actions run in an isolated sandbox with only the selected workspace mounted.
+- Coding and shell actions run in a Docker sandbox with only the selected workspace mounted.
+- Native host execution is not a supported v1 fallback; unavailable Docker causes the action to fail closed.
 - Remote pushes, dependency installation, secret access, and destructive commands always require a separate risky-action approval.
 
 ## Data model

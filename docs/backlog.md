@@ -8,7 +8,7 @@ Items are ordered by dependency and user value. An item is complete only when it
 
 - [x] Add settings models, environment validation, and example configuration.
   - Supports portable single-host settings and rejects missing required secrets at startup.
-- [ ] Create SQLite migrations and repositories for sessions, approvals, workflow runs, and audit events.
+- [x] Create SQLite migrations and repositories for sessions, approvals, workflow runs, and audit events.
   - Creates a fresh database and records an immutable audit event transactionally with each state-changing request.
 - [ ] Add structured logging with redaction.
   - Never emits tokens, authorization headers, or configured secret fields.
@@ -39,8 +39,10 @@ Items are ordered by dependency and user value. An item is complete only when it
 
 ## P2 — Local execution
 
+- [ ] Add the Docker sandbox runtime and health check.
+  - Fails closed when Docker is unavailable and never falls back to native host execution.
 - [ ] Add a constrained filesystem and shell adapter.
-  - Reads and writes stay within granted paths; each executed command, exit code, and output digest is audited.
+  - Mounts only granted paths into Docker; each command, exit code, and output digest is audited.
 - [ ] Add sandboxed workspace creation.
   - Creates new repositories only below the configured workspace root and returns the created path.
 

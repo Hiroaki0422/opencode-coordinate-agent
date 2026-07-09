@@ -50,4 +50,4 @@ uv run ruff check .
 
 Set only the integrations you intend to use. Startup validation requires credentials only for integrations whose `enabled` flag is `true`.
 
-The repository is currently an architecture scaffold. The first runnable slice is defined in the P0 backlog.
+P0 implementation is underway. Typed settings and audited SQLite persistence are complete; the remaining safe-core work is tracked in the backlog.

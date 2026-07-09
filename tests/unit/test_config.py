@@ -2,8 +2,19 @@
 
 import pytest
 from pydantic import ValidationError
+from pydantic_settings import SettingsConfigDict
 
-from personal_agent.core.config import Environment, Settings
+from personal_agent.core.config import Environment, SandboxBackend, Settings
+
+
+class SettingsWithoutDotEnv(Settings):
+    """Load process environment variables without reading a developer's .env file."""
+
+    model_config = SettingsConfigDict(
+        env_prefix="PERSONAL_AGENT_",
+        env_nested_delimiter="__",
+        extra="ignore",
+    )
 
 
 @pytest.fixture(autouse=True)
@@ -25,12 +36,14 @@ def clear_agent_environment(monkeypatch: pytest.MonkeyPatch) -> None:
         "PERSONAL_AGENT_TELEGRAM__ALLOWED_CHAT_IDS",
         "PERSONAL_AGENT_LOCAL_EXECUTION__ENABLED",
         "PERSONAL_AGENT_LOCAL_EXECUTION__WORKSPACE_ROOT",
+        "PERSONAL_AGENT_LOCAL_EXECUTION__SANDBOX_BACKEND",
+        "PERSONAL_AGENT_LOCAL_EXECUTION__DOCKER_IMAGE",
     ):
         monkeypatch.delenv(name, raising=False)
 
 
 def test_defaults_leave_optional_integrations_disabled() -> None:
-    settings = Settings(_env_file=None)
+    settings = SettingsWithoutDotEnv()
 
     assert settings.environment is Environment.DEVELOPMENT
     assert settings.openai.enabled is False
@@ -38,6 +51,7 @@ def test_defaults_leave_optional_integrations_disabled() -> None:
     assert settings.telegram.enabled is False
     workspace_root = settings.local_execution.workspace_root
     assert workspace_root == workspace_root.expanduser()
+    assert settings.local_execution.sandbox_backend is SandboxBackend.DOCKER
 
 
 @pytest.mark.parametrize(
@@ -61,7 +75,7 @@ def test_enabled_integrations_require_their_secret(
     monkeypatch.delenv(missing_secret, raising=False)
 
     with pytest.raises(ValidationError, match=expected_message):
-        Settings(_env_file=None)
+        SettingsWithoutDotEnv()
 
 
 def test_telegram_requires_a_token_and_allowlisted_chat(
@@ -71,7 +85,7 @@ def test_telegram_requires_a_token_and_allowlisted_chat(
     monkeypatch.setenv("PERSONAL_AGENT_TELEGRAM__BOT_TOKEN", "telegram-secret")
 
     with pytest.raises(ValidationError, match="telegram.allowed_chat_ids"):
-        Settings(_env_file=None)
+        SettingsWithoutDotEnv()
 
 
 def test_enabled_integrations_load_from_nested_environment_variables(
@@ -88,7 +102,7 @@ def test_enabled_integrations_load_from_nested_environment_variables(
     monkeypatch.setenv("PERSONAL_AGENT_LOCAL_EXECUTION__ENABLED", "true")
     monkeypatch.setenv("PERSONAL_AGENT_LOCAL_EXECUTION__WORKSPACE_ROOT", "~/agent-workspaces")
 
-    settings = Settings(_env_file=None)
+    settings = SettingsWithoutDotEnv()
 
     assert settings.environment is Environment.PRODUCTION
     assert settings.openai.api_key is not None
@@ -98,3 +112,4 @@ def test_enabled_integrations_load_from_nested_environment_variables(
     assert settings.telegram.allowed_chat_ids == [123456]
     assert settings.local_execution.enabled is True
     assert settings.local_execution.workspace_root.name == "agent-workspaces"
+    assert settings.local_execution.sandbox_backend is SandboxBackend.DOCKER

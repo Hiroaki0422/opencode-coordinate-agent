@@ -1,10 +1,16 @@
 """Framework-independent contracts shared across transports and local tools."""
 
-from datetime import datetime
+from datetime import UTC, datetime
 from enum import StrEnum
 from uuid import UUID, uuid4
 
 from pydantic import BaseModel, Field
+
+
+def utc_now() -> datetime:
+    """Return a timezone-aware UTC timestamp for domain contracts."""
+
+    return datetime.now(UTC)
 
 
 class RiskLevel(StrEnum):
@@ -36,4 +42,4 @@ class ApprovalGrant(BaseModel):
     resource_pattern: str
     risk_level: RiskLevel
     expires_at: datetime
-    issued_at: datetime = Field(default_factory=datetime.now)
+    issued_at: datetime = Field(default_factory=utc_now)
