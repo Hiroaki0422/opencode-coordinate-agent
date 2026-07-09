@@ -1,4 +1,4 @@
-"""Framework-independent contracts shared across transports and workers."""
+"""Framework-independent contracts shared across transports and local tools."""
 
 from datetime import datetime
 from enum import StrEnum

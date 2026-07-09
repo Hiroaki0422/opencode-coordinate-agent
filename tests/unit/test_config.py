@@ -23,9 +23,8 @@ def clear_agent_environment(monkeypatch: pytest.MonkeyPatch) -> None:
         "PERSONAL_AGENT_TELEGRAM__ENABLED",
         "PERSONAL_AGENT_TELEGRAM__BOT_TOKEN",
         "PERSONAL_AGENT_TELEGRAM__ALLOWED_CHAT_IDS",
-        "PERSONAL_AGENT_MAC_WORKER__ENABLED",
-        "PERSONAL_AGENT_MAC_WORKER__SHARED_SECRET",
-        "PERSONAL_AGENT_MAC_WORKER__WORKSPACE_ROOT",
+        "PERSONAL_AGENT_LOCAL_EXECUTION__ENABLED",
+        "PERSONAL_AGENT_LOCAL_EXECUTION__WORKSPACE_ROOT",
     ):
         monkeypatch.delenv(name, raising=False)
 
@@ -37,7 +36,8 @@ def test_defaults_leave_optional_integrations_disabled() -> None:
     assert settings.openai.enabled is False
     assert settings.todoist.enabled is False
     assert settings.telegram.enabled is False
-    assert settings.mac_worker.workspace_root == settings.mac_worker.workspace_root.expanduser()
+    workspace_root = settings.local_execution.workspace_root
+    assert workspace_root == workspace_root.expanduser()
 
 
 @pytest.mark.parametrize(
@@ -48,11 +48,6 @@ def test_defaults_leave_optional_integrations_disabled() -> None:
             "PERSONAL_AGENT_TODOIST__ENABLED",
             "PERSONAL_AGENT_TODOIST__API_TOKEN",
             "todoist.api_token",
-        ),
-        (
-            "PERSONAL_AGENT_MAC_WORKER__ENABLED",
-            "PERSONAL_AGENT_MAC_WORKER__SHARED_SECRET",
-            "mac_worker.shared_secret",
         ),
     ],
 )
@@ -90,8 +85,8 @@ def test_enabled_integrations_load_from_nested_environment_variables(
     monkeypatch.setenv("PERSONAL_AGENT_TELEGRAM__ENABLED", "true")
     monkeypatch.setenv("PERSONAL_AGENT_TELEGRAM__BOT_TOKEN", "telegram-secret")
     monkeypatch.setenv("PERSONAL_AGENT_TELEGRAM__ALLOWED_CHAT_IDS", "[123456]")
-    monkeypatch.setenv("PERSONAL_AGENT_MAC_WORKER__ENABLED", "true")
-    monkeypatch.setenv("PERSONAL_AGENT_MAC_WORKER__SHARED_SECRET", "worker-secret")
+    monkeypatch.setenv("PERSONAL_AGENT_LOCAL_EXECUTION__ENABLED", "true")
+    monkeypatch.setenv("PERSONAL_AGENT_LOCAL_EXECUTION__WORKSPACE_ROOT", "~/agent-workspaces")
 
     settings = Settings(_env_file=None)
 
@@ -101,5 +96,5 @@ def test_enabled_integrations_load_from_nested_environment_variables(
     assert settings.todoist.api_token is not None
     assert settings.todoist.api_token.get_secret_value() == "todoist-secret"
     assert settings.telegram.allowed_chat_ids == [123456]
-    assert settings.mac_worker.shared_secret is not None
-    assert settings.mac_worker.shared_secret.get_secret_value() == "worker-secret"
+    assert settings.local_execution.enabled is True
+    assert settings.local_execution.workspace_root.name == "agent-workspaces"

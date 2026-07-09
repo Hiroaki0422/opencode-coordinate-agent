@@ -5,7 +5,7 @@ build-backend = "hatchling.build"
 [project]
 name = "personal-agent"
 version = "0.1.0"
-description = "A permission-gated personal AI agent with VPS orchestration and a Mac worker."
+description = "A permission-gated personal AI agent for independent single-host deployments."
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [

@@ -1,6 +1,6 @@
 # Personal Agent
 
-A privacy-conscious personal AI agent with a VPS-based control plane and a Mac worker for local execution.
+A privacy-conscious personal AI agent that runs independently on a single Mac or VPS.
 
 The first release will provide a CLI, Todoist task management, source-based web research, approval-gated local shell access, and delegated coding work through OpenCode with DeepSeek. Telegram and retrieval-augmented memory follow after the core safety and tool paths are proven.
 
@@ -10,17 +10,14 @@ The first release will provide a CLI, Todoist task management, source-based web 
 CLI / Telegram / SSH
         |
         v
-VPS control plane
+Single-host runtime
 FastAPI + LangGraph + PydanticAI + SQLite
-        |
-        v
-Mac worker
 OpenCode + local shell + approved workspaces
 ```
 
-The control plane owns sessions, policy, orchestration, and audit records. The Mac worker only executes signed, scoped jobs. Models propose actions; deterministic policy code authorizes them.
+Each installation owns its own sessions, policy, orchestration, audit records, and local workspace. Models propose actions; deterministic policy code authorizes them. VPS-to-Mac coordination is deferred to v2.
 
-See [the architecture](docs/architecture.md), [the implementation backlog](docs/backlog.md), and [the first architecture decision](docs/decisions/0001-control-plane-worker-boundary.md).
+See [the architecture](docs/architecture.md), [the implementation backlog](docs/backlog.md), and [the first architecture decision](docs/decisions/0001-single-host-v1.md).
 
 ## Repository layout
 
@@ -34,7 +31,7 @@ src/personal_agent/
   persistence/  SQLite repositories and audit storage
   policy/       Approval and capability enforcement
   tools/        Audited tool adapters
-  worker/       VPS-to-Mac job protocol and worker runtime
+  execution/    Host-local shell, workspace, and OpenCode execution
 docs/           Architecture, decisions, and backlog
 config/         Checked-in example configuration only
 tests/          Unit, integration, and evaluation fixtures

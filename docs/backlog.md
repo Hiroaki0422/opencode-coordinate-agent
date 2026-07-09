@@ -7,7 +7,7 @@ Items are ordered by dependency and user value. An item is complete only when it
 ### Foundation
 
 - [x] Add settings models, environment validation, and example configuration.
-  - Accepts separate VPS and Mac-worker settings; rejects missing required secrets at startup.
+  - Supports portable single-host settings and rejects missing required secrets at startup.
 - [ ] Create SQLite migrations and repositories for sessions, approvals, workflow runs, and audit events.
   - Creates a fresh database and records an immutable audit event transactionally with each state-changing request.
 - [ ] Add structured logging with redaction.
@@ -37,12 +37,8 @@ Items are ordered by dependency and user value. An item is complete only when it
 - [ ] Add P0/P1 evaluation cases.
   - Covers ordinary actions, expired grants, wrong resource scopes, duplicate execution after resume, and prompt injection in retrieved content.
 
-## P2 — Mac execution worker
+## P2 — Local execution
 
-- [ ] Define signed `WorkerJob` and `WorkerResult` contracts.
-  - Job signatures, expiry, allowed paths, and risk level are validated by both VPS and Mac worker.
-- [ ] Implement a Mac worker with an outbound job channel.
-  - The Mac requires no public inbound port and reconnects safely after sleep or network changes.
 - [ ] Add a constrained filesystem and shell adapter.
   - Reads and writes stay within granted paths; each executed command, exit code, and output digest is audited.
 - [ ] Add sandboxed workspace creation.
@@ -51,9 +47,9 @@ Items are ordered by dependency and user value. An item is complete only when it
 ## P3 — OpenCode coding delegation
 
 - [ ] Add the OpenCode adapter and DeepSeek profile.
-  - Starts only for an approved workspace job and passes a structured task contract.
+  - Starts only for an approved host-local workspace and passes a structured task contract.
 - [ ] Capture coding evidence.
-  - Returns changed files, diff summary, command/test results, and a concise worker report.
+  - Returns changed files, diff summary, command/test results, and a concise execution report.
 - [ ] Add named-repository access grants.
   - Requires an explicit repository path; branch changes, remote pushes, installs, and destructive commands remain risky actions.
 - [ ] Add code-task evaluations.
@@ -63,9 +59,9 @@ Items are ordered by dependency and user value. An item is complete only when it
 
 - [ ] Add Telegram webhook authentication and user/chat allowlists.
   - Rejects messages outside the configured account and routes approvals through one-time action tokens.
-- [ ] Render approvals and worker progress for Telegram.
+- [ ] Render approvals and local-execution progress for Telegram.
   - Shows the tool, resource, effect, reason, expiry, and approve/deny controls.
-- [ ] Add deployment assets for the VPS and Mac worker.
+- [ ] Add single-host deployment assets.
   - Documents system-service setup, backup, recovery, upgrade, and secret rotation.
 
 ## P5 — Memory and RAG
@@ -84,3 +80,4 @@ Items are ordered by dependency and user value. An item is complete only when it
 - Multi-agent swarms or unconstrained agent handoffs.
 - Automatic remote pushes, external messages, or payment actions.
 - Hosted observability beyond optional future tracing export.
+- VPS-to-Mac coordination, job dispatch, and state synchronization.

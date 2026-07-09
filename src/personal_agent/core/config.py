@@ -41,11 +41,10 @@ class TelegramSettings(BaseModel):
     allowed_chat_ids: list[int] = Field(default_factory=list)
 
 
-class MacWorkerSettings(BaseModel):
-    """Configuration for the Mac's private execution worker."""
+class LocalExecutionSettings(BaseModel):
+    """Configuration for shell and coding tools on the current host."""
 
     enabled: bool = False
-    shared_secret: SecretStr | None = None
     workspace_root: Path = Field(default=Path("~/agent-workspaces"), validate_default=True)
 
     @field_validator("workspace_root", mode="after")
@@ -75,7 +74,7 @@ class Settings(BaseSettings):
     openai: OpenAISettings = Field(default_factory=OpenAISettings)
     todoist: TodoistSettings = Field(default_factory=TodoistSettings)
     telegram: TelegramSettings = Field(default_factory=TelegramSettings)
-    mac_worker: MacWorkerSettings = Field(default_factory=MacWorkerSettings)
+    local_execution: LocalExecutionSettings = Field(default_factory=LocalExecutionSettings)
 
     @field_validator("data_dir", "policy_path", mode="after")
     @classmethod
@@ -110,10 +109,6 @@ class Settings(BaseSettings):
                 raise ValueError(
                     "telegram.allowed_chat_ids is required when telegram.enabled is true"
                 )
-        if self.mac_worker.enabled and self.mac_worker.shared_secret is None:
-            raise ValueError(
-                "mac_worker.shared_secret is required when mac_worker.enabled is true"
-            )
         return self
 
 
