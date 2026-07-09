@@ -1,0 +1,24 @@
+session:
+  default_ttl_minutes: 120
+  approval_ttl_minutes: 15
+
+permissions:
+  read:
+    default: allow
+  write:
+    default: approval_per_session
+  risky:
+    default: approval_per_action
+
+workspaces:
+  create_root: ~/agent-workspaces
+  existing_repositories: explicit_session_grant
+  remote_push: risky
+  dependency_install: risky
+  destructive_commands: risky
+
+transports:
+  telegram:
+    allowed_chat_ids: []
+  cli:
+    require_local_user_authentication: true
