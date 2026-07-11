@@ -57,6 +57,67 @@ Items are ordered by dependency and user value. An item is complete only when it
 - [x] Add code-task evaluations.
   - Tests repository creation, workspace escape rejection, failed tests, and requested-change verification.
 
+## P3.5 — Optional Codex subscription provider
+
+This phase adds ChatGPT/Codex subscription usage as an optional coordinator provider without replacing
+the existing API-key providers. The first implementation invokes the official Codex CLI and lets that
+CLI own OAuth login, credential storage, refresh, subscription limits, and reauthentication. Directly
+implementing or copying OAuth tokens is intentionally out of scope for the initial version.
+
+- [ ] Verify and document the supported Codex CLI contract.
+  - Pin and test a minimum Codex CLI version, non-interactive command, JSON event format, structured
+    output support, read-only sandbox mode, timeout behavior, authentication status, and exit codes.
+  - Detect a missing executable, missing ChatGPT login, expired authorization, subscription exhaustion,
+    rate limits, malformed output, and unsupported CLI versions with distinct sanitized errors.
+- [ ] Add `CodexSubscriptionSettings` and startup validation.
+  - Configure enablement, executable path, model, timeout, working directory, and maximum response size.
+  - Enabling the provider requires a healthy Codex CLI login but never requires an OpenAI API key.
+  - Credentials remain owned by the Codex CLI under its user configuration directory; they are never
+    copied into `.env`, SQLite, checkpoints, audit payloads, Docker arguments, or application logs.
+- [ ] Implement a restricted Codex CLI process adapter.
+  - Invoke the executable with an argument vector rather than a host shell and use a clean temporary
+    working directory with no project repository, secrets, or writable application paths mounted.
+  - Disable or deny autonomous filesystem writes, shell execution, network tools, MCP servers, plugins,
+    and repository discovery so Codex acts only as an underlying reasoning provider.
+  - Apply process timeout, output-size, environment allowlist, cancellation, and child-process cleanup.
+- [ ] Implement a typed `CodexSubscriptionCoordinator`.
+  - Conform to the existing `Coordinator` protocol for both `decide` and evidence-based `compose` calls.
+  - Request JSON matching `CoordinatorDecision` or `GroundedResponse`, validate it with Pydantic, and
+    perform a bounded corrective retry when the CLI returns invalid structured output.
+  - Treat all Codex text as untrusted model output; deterministic policy and the tool gateway retain all
+    action authority exactly as they do for API-backed coordinators.
+- [ ] Extend provider-neutral coordinator routing.
+  - Support ordered routes containing both PydanticAI API models and the Codex subscription coordinator.
+  - Permit Codex subscription to be primary, fallback, or the only configured provider.
+  - Fall back only for classified provider failures; never fall through after a policy denial, tool
+    failure, malformed user request, or partially completed external effect.
+- [ ] Add local observability without credential exposure.
+  - Audit provider name, CLI version, model, duration, exit class, retry count, response digest, and
+    fallback decision while excluding prompts, raw OAuth data, access tokens, and refresh tokens.
+  - Surface actionable login instructions when reauthentication is required and preserve the original
+    provider failure when every configured fallback is exhausted.
+- [ ] Add deterministic and opt-in integration tests.
+  - Mock the subprocess for successful decisions, synthesis, invalid JSON, corrective retry, timeout,
+    missing login, exhausted subscription, rate limit, cancellation, and ordered fallback behavior.
+  - Verify that a model-proposed action still pauses at the existing policy node and cannot invoke tools
+    or write files directly through the Codex process.
+  - Keep CI independent of a real ChatGPT account; provide a separately marked local smoke test that
+    consumes subscription allowance only when the user explicitly enables it.
+- [ ] Update setup, security, and recovery documentation.
+  - Explain installing Codex CLI, signing in with ChatGPT, checking login health, selecting route order,
+    logging out, revoking access, and returning to API-key providers.
+  - Document that ChatGPT subscription limits and availability differ from API billing and that this
+    optional provider depends on the supported behavior of the installed Codex CLI.
+
+### P3.5 acceptance criteria
+
+- The agent can run with Codex subscription as its only coordinator without an OpenAI API key.
+- Codex cannot directly execute tools or modify the user's repository while serving as coordinator.
+- Typed decisions and grounded responses pass the same validation and policy path as existing models.
+- Missing, expired, limited, or malformed Codex responses fail safely and use configured fallbacks.
+- No OAuth credential or token value appears in logs, audit events, databases, checkpoints, or commands.
+- Offline tests pass without Codex credentials, and the optional authenticated smoke test is documented.
+
 ## P4 — Telegram and operational polish
 
 - [ ] Add Telegram long-polling authentication and user/chat allowlists.
