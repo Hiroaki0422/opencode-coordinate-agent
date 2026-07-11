@@ -84,6 +84,26 @@ Search results are fetched separately over HTTP. The fetcher accepts only public
 
 Research responses are rendered only when the synthesis cites source identifiers that exist in the retrieved evidence. The final response separates model synthesis from retrieved source URLs.
 
+## P2 local execution
+
+The `local_execution` adapter exposes Docker health checks, workspace creation, file listing and
+reading, file writing, and argument-vector command execution. It accepts only workspaces beneath
+the configured root and rejects absolute, parent-relative, missing, or symlink-escaping file paths.
+Repository creation uses a validated single-directory name and initializes Git inside the sandbox.
+
+Every action runs in a short-lived container with only one workspace mounted. Containers use a
+read-only root filesystem, dropped Linux capabilities, `no-new-privileges`, process, memory, and CPU
+limits, a constrained temporary filesystem, and the host caller's numeric user identity. Read tools
+mount the workspace read-only; writes mount it read-write. The application invokes the Docker CLI
+directly without a host shell and never falls back to native execution.
+
+Container networking is `none` by default. A command may request ordinary Docker bridge networking
+only when its action is classified `risky`, which forces an individual approval rather than creating
+a reusable session grant. Package managers, destructive commands, remote pushes, and common network
+download commands are also rejected unless the action has risky approval. Audit completion events
+record the command vector, exit code, output hashes, truncation status, and network state; raw command
+output remains in the transient structured result rather than the audit event.
+
 ## Model boundaries
 
 | Role | Provider | Authority |

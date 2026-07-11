@@ -3,7 +3,7 @@
 from datetime import timedelta
 from pathlib import Path
 from typing import Any, cast
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 from langgraph.types import Command
 from sqlalchemy import func, select
@@ -48,8 +48,9 @@ class FakeCoordinator:
 class FakeTodoistTool:
     name = "todoist"
 
-    def __init__(self) -> None:
+    def __init__(self, audit_data: dict[str, Any] | None = None) -> None:
         self.calls = 0
+        self.audit_data = audit_data or {}
 
     async def execute(self, action: ActionRequest) -> ToolExecutionResult:
         self.calls += 1
@@ -60,6 +61,7 @@ class FakeTodoistTool:
             data={"results": [{"id": "task-123", "content": "Task"}]},
             external_ids=["task-123"],
             evidence=[ToolEvidence(kind="todoist_task", identifier="task-123")],
+            audit_data=self.audit_data,
         )
 
     async def aclose(self) -> None:
@@ -220,6 +222,45 @@ async def test_graph_executes_and_verifies_registered_read_tool(
     assert result["status"] == "completed"
     assert "task-123" in result["response"]
     assert tool_audits == 2
+
+
+async def test_gateway_persists_adapter_audit_metadata(database: Database) -> None:
+    session_id = await create_session(database)
+    run_id = uuid4()
+    gateway = ToolGateway(database)
+    gateway.register(
+        FakeTodoistTool(
+            audit_data={
+                "command": ["example"],
+                "exit_code": 0,
+                "stdout_digest": "digest",
+            }
+        )
+    )
+    action = ActionRequest(
+        tool_name="todoist",
+        operation="list_tasks",
+        resource="all",
+        risk_level=RiskLevel.READ,
+        summary="List tasks",
+    )
+
+    await gateway.execute(
+        session_id=UUID(session_id),
+        run_id=run_id,
+        action=action,
+    )
+
+    async with database.engine.connect() as connection:
+        payload = await connection.scalar(
+            select(AuditEventModel.payload).where(
+                AuditEventModel.event_type == "tool.completed"
+            )
+        )
+
+    assert payload is not None
+    assert payload["adapter"]["command"] == ["example"]
+    assert payload["adapter"]["stdout_digest"] == "digest"
 
 
 async def test_duplicate_resume_does_not_repeat_external_mutation(

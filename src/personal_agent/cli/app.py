@@ -13,6 +13,7 @@ import typer
 from langgraph.types import Command
 
 from personal_agent.core.config import Settings, get_settings
+from personal_agent.execution import DockerSandbox, LocalExecutionTool, WorkspaceService
 from personal_agent.graph import AgentState, open_agent_graph
 from personal_agent.models import build_coordinator
 from personal_agent.observability import configure_logging
@@ -59,6 +60,14 @@ def _build_tool_gateway(settings: Settings, database: Database) -> ToolGateway:
                     base_url=settings.todoist.base_url,
                     timeout_seconds=settings.todoist.timeout_seconds,
                 )
+            )
+        )
+    if settings.local_execution.enabled:
+        sandbox = DockerSandbox(settings.local_execution)
+        gateway.register(
+            LocalExecutionTool(
+                sandbox,
+                WorkspaceService(settings.local_execution.workspace_root, sandbox),
             )
         )
     return gateway

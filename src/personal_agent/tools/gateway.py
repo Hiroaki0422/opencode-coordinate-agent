@@ -72,6 +72,7 @@ class ToolGateway:
                 "external_ids": result.external_ids,
                 "evidence_ids": [item.identifier for item in result.evidence],
                 "result_digest": result_digest,
+                "adapter": result.audit_data,
                 "error": result.error,
             },
         )

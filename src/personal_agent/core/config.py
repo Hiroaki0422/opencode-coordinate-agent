@@ -105,6 +105,11 @@ class LocalExecutionSettings(BaseModel):
     workspace_root: Path = Field(default=Path("~/agent-workspaces"), validate_default=True)
     sandbox_backend: SandboxBackend = SandboxBackend.DOCKER
     docker_image: str = "personal-agent-sandbox:latest"
+    command_timeout_seconds: float = Field(default=120.0, gt=0)
+    max_output_bytes: int = Field(default=1_000_000, ge=1_024)
+    memory_limit: str = "512m"
+    cpu_limit: float = Field(default=1.0, gt=0)
+    pids_limit: int = Field(default=128, ge=16)
 
     @field_validator("workspace_root", mode="after")
     @classmethod

@@ -43,9 +43,40 @@ class ResponseVerifier:
                 result=result,
                 coordinator=coordinator,
             )
+        if action.tool_name == "local_execution":
+            return self._verify_local_execution(decision_message, action, result)
         return VerificationResult(
             success=True,
             response=f"{decision_message}\n\nTool result verified.",
+        )
+
+    def _verify_local_execution(
+        self,
+        decision_message: str,
+        action: ActionRequest,
+        result: ToolExecutionResult,
+    ) -> VerificationResult:
+        if action.operation == "create_workspace":
+            path = result.data.get("path")
+            if not isinstance(path, str) or path not in result.external_ids:
+                return VerificationResult(
+                    success=False,
+                    response="Workspace creation returned no verifiable path.",
+                )
+            return VerificationResult(
+                success=True,
+                response=f"{decision_message}\n\nCreated Git workspace: {path}.",
+            )
+        if action.operation in {"list_files", "read_file", "run_command"}:
+            stdout = str(result.data.get("stdout", ""))
+            suffix = "\nOutput was truncated." if result.data.get("output_truncated") else ""
+            return VerificationResult(
+                success=True,
+                response=f"{decision_message}\n\nSandbox output:\n{stdout}{suffix}",
+            )
+        return VerificationResult(
+            success=True,
+            response=f"{decision_message}\n\nLocal operation `{action.operation}` succeeded.",
         )
 
     def _verify_todoist(

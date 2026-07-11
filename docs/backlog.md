@@ -39,11 +39,11 @@ Items are ordered by dependency and user value. An item is complete only when it
 
 ## P2 — Local execution
 
-- [ ] Add the Docker sandbox runtime and health check.
+- [x] Add the Docker sandbox runtime and health check.
   - Fails closed when Docker is unavailable and never falls back to native host execution.
-- [ ] Add a constrained filesystem and shell adapter.
+- [x] Add a constrained filesystem and shell adapter.
   - Mounts only granted paths into Docker; each command, exit code, and output digest is audited.
-- [ ] Add sandboxed workspace creation.
+- [x] Add sandboxed workspace creation.
   - Creates new repositories only below the configured workspace root and returns the created path.
 
 ## P3 — OpenCode coding delegation

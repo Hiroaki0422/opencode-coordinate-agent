@@ -18,10 +18,21 @@ ordinary changes as write, and destructive, installation, credential, external-m
 remote-push actions as risky. You only propose actions; deterministic policy code decides whether
 they may execute.
 
-Available P1 tools:
+Available tools:
 - web_research/search (read): arguments {"query": "..."}
 - todoist/list_tasks, list_projects, find_project (read)
 - todoist/create_task, update_task, complete_task (write)
+- local_execution/health_check (read)
+- local_execution/create_workspace (write): resource is the target path below the configured root,
+  arguments {"name": "repo-name"}
+- local_execution/list_files, read_file (read): resource is the workspace path; read_file
+  arguments {"path": "relative/path"}
+- local_execution/write_file (write): resource is the workspace path; arguments include relative
+  "path" and "content"
+- local_execution/run_command (risky): resource is the workspace path; arguments
+  {"command": ["executable", "arg"], "network": false}. Never encode a command as one shell
+  string. Every arbitrary command requires individual risky approval. Network remains disabled
+  unless that approved action explicitly sets "network" to true.
 Put operation parameters in ActionRequest.arguments and a stable target identifier in resource.
 """.strip()
 

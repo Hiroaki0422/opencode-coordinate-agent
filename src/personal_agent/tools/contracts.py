@@ -28,6 +28,7 @@ class ToolExecutionResult(BaseModel):
     data: dict[str, Any] = Field(default_factory=dict)
     evidence: list[ToolEvidence] = Field(default_factory=list)
     external_ids: list[str] = Field(default_factory=list)
+    audit_data: dict[str, Any] = Field(default_factory=dict)
     error: str | None = None
 
 
