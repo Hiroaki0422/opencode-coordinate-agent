@@ -110,6 +110,7 @@ class LocalExecutionSettings(BaseModel):
     memory_limit: str = "512m"
     cpu_limit: float = Field(default=1.0, gt=0)
     pids_limit: int = Field(default=128, ge=16)
+    repository_paths: list[Path] = Field(default_factory=list)
 
     @field_validator("workspace_root", mode="after")
     @classmethod
@@ -117,6 +118,24 @@ class LocalExecutionSettings(BaseModel):
         """Normalize the workspace root before policy checks use it."""
 
         return value.expanduser()
+
+    @field_validator("repository_paths", mode="after")
+    @classmethod
+    def expand_repository_paths(cls, values: list[Path]) -> list[Path]:
+        """Normalize explicitly allowlisted existing repositories."""
+
+        return [value.expanduser() for value in values]
+
+
+class OpenCodeSettings(BaseModel):
+    """Configuration for sandboxed coding delegation."""
+
+    enabled: bool = False
+    executable: str = "opencode"
+    model: str = "deepseek/deepseek-chat"
+    timeout_seconds: float = Field(default=900.0, gt=0)
+    max_diff_chars: int = Field(default=20_000, ge=1_000)
+    max_report_chars: int = Field(default=8_000, ge=500)
 
 
 class Settings(BaseSettings):
@@ -146,6 +165,7 @@ class Settings(BaseSettings):
     telegram: TelegramSettings = Field(default_factory=TelegramSettings)
     policy: PolicySettings = Field(default_factory=PolicySettings)
     local_execution: LocalExecutionSettings = Field(default_factory=LocalExecutionSettings)
+    opencode: OpenCodeSettings = Field(default_factory=OpenCodeSettings)
 
     @field_validator("data_dir", "checkpoint_path", "policy_path", mode="after")
     @classmethod
@@ -193,6 +213,11 @@ class Settings(BaseSettings):
                 raise ValueError(
                     "telegram.allowed_chat_ids is required when telegram.enabled is true"
                 )
+        if self.opencode.enabled:
+            if not self.local_execution.enabled:
+                raise ValueError("local_execution must be enabled when opencode.enabled is true")
+            if not self.deepseek.enabled or self.deepseek.api_key is None:
+                raise ValueError("deepseek must be enabled when opencode.enabled is true")
         return self
 
 

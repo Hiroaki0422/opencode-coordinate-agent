@@ -20,16 +20,19 @@ from personal_agent.execution.docker import CommandExecutor, ProcessResult, Sand
 class FakeExecutor:
     def __init__(self, results: list[ProcessResult]) -> None:
         self.results = results
-        self.calls: list[tuple[list[str], bytes | None, float]] = []
+        self.calls: list[
+            tuple[list[str], bytes | None, dict[str, str] | None, float]
+        ] = []
 
     async def execute(
         self,
         arguments: list[str],
         *,
         stdin: bytes | None = None,
+        environment: dict[str, str] | None = None,
         timeout_seconds: float,
     ) -> ProcessResult:
-        self.calls.append((arguments, stdin, timeout_seconds))
+        self.calls.append((arguments, stdin, environment, timeout_seconds))
         return self.results.pop(0)
 
 
@@ -133,6 +136,56 @@ async def test_docker_runtime_enables_network_only_when_requested(tmp_path: Path
     docker_run = executor.calls[2][0]
     assert docker_run[docker_run.index("--network") + 1] == "bridge"
     assert f"type=bind,src={workspace.resolve()},dst=/workspace" in docker_run
+
+
+async def test_docker_runtime_inherits_named_environment_without_argument_values(
+    tmp_path: Path,
+) -> None:
+    workspace = tmp_path / "repo"
+    workspace.mkdir()
+    executor = FakeExecutor(
+        [
+            ProcessResult(exit_code=0, stdout=b"27", stderr=b""),
+            ProcessResult(exit_code=0, stdout=b"[]", stderr=b""),
+            ProcessResult(exit_code=0, stdout=b"", stderr=b""),
+        ]
+    )
+    sandbox = DockerSandbox(
+        settings(tmp_path),
+        executor=cast(CommandExecutor, executor),
+    )
+
+    await sandbox.run(
+        workspace=workspace,
+        command=["python", "-V"],
+        writable=False,
+        environment={"DEEPSEEK_API_KEY": "secret-value"},
+    )
+
+    docker_run = executor.calls[2][0]
+    assert docker_run[docker_run.index("--env") + 1] == "DEEPSEEK_API_KEY"
+    assert "secret-value" not in docker_run
+    assert executor.calls[2][2] == {"DEEPSEEK_API_KEY": "secret-value"}
+
+
+async def test_docker_runtime_accepts_exact_named_repository(tmp_path: Path) -> None:
+    root = tmp_path / "workspaces"
+    root.mkdir()
+    named_repo = tmp_path / "named"
+    named_repo.mkdir()
+    executor = FakeExecutor(
+        [
+            ProcessResult(exit_code=0, stdout=b"27", stderr=b""),
+            ProcessResult(exit_code=0, stdout=b"[]", stderr=b""),
+            ProcessResult(exit_code=0, stdout=b"", stderr=b""),
+        ]
+    )
+    configured = settings(root).model_copy(update={"repository_paths": [named_repo]})
+    sandbox = DockerSandbox(configured, executor=cast(CommandExecutor, executor))
+
+    await sandbox.run(workspace=named_repo, command=["git", "status"], writable=False)
+
+    assert f"type=bind,src={named_repo.resolve()},dst=/workspace,readonly" in executor.calls[2][0]
 
 
 def test_workspace_service_rejects_escape_and_symlink(tmp_path: Path) -> None:

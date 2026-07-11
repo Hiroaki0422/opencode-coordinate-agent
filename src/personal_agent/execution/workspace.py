@@ -14,9 +14,15 @@ _WORKSPACE_NAME = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,63}")
 class WorkspaceService:
     """Resolve files and create repositories beneath one configured root."""
 
-    def __init__(self, workspace_root: Path, sandbox: DockerSandbox) -> None:
+    def __init__(
+        self,
+        workspace_root: Path,
+        sandbox: DockerSandbox,
+        repository_paths: list[Path] | None = None,
+    ) -> None:
         self._root = workspace_root.expanduser()
         self._sandbox = sandbox
+        self._repository_paths = [path.expanduser() for path in repository_paths or []]
 
     def resolve_workspace(self, resource: str) -> Path:
         root = self._root.resolve()
@@ -27,7 +33,11 @@ class WorkspaceService:
             resolved = candidate.resolve(strict=True)
         except FileNotFoundError as error:
             raise SandboxExecutionError("workspace does not exist") from error
-        if not resolved.is_dir() or not resolved.is_relative_to(root):
+        named_repositories = {
+            path.resolve() for path in self._repository_paths if path.exists()
+        }
+        allowed = resolved.is_relative_to(root) or resolved in named_repositories
+        if not resolved.is_dir() or not allowed:
             raise SandboxExecutionError("workspace is outside the configured workspace root")
         return resolved
 

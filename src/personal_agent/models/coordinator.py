@@ -33,6 +33,11 @@ Available tools:
   {"command": ["executable", "arg"], "network": false}. Never encode a command as one shell
   string. Every arbitrary command requires individual risky approval. Network remains disabled
   unless that approved action explicitly sets "network" to true.
+- opencode/code_task (risky): resource must be the exact approved Git repository path; arguments
+  {"task": "...", "acceptance_criteria": ["..."], "expected_files": ["relative/path"],
+  "test_commands": [["pytest", "-q"]]}. OpenCode edits only that repository. Its provider network
+  access makes every coding delegation individually approved. Installs, branch changes, destructive
+  commands, external directories, and pushes are denied inside this operation.
 Put operation parameters in ActionRequest.arguments and a stable target identifier in resource.
 """.strip()
 

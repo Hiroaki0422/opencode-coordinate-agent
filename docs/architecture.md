@@ -104,6 +104,26 @@ download commands are also rejected unless the action has risky approval. Audit 
 record the command vector, exit code, output hashes, truncation status, and network state; raw command
 output remains in the transient structured result rather than the audit event.
 
+## P3 coding delegation
+
+The `opencode/code_task` adapter accepts a typed task, acceptance criteria, expected relative file
+paths, and constrained test command vectors. It resolves the action resource to either a repository
+below the managed workspace root or one exact path in the configured repository allowlist. The path
+must be a Git repository and must match the resource approved by the outer policy layer.
+
+OpenCode runs non-interactively inside the same hardened image with a pinned version and a DeepSeek
+model profile. Runtime configuration is supplied through `OPENCODE_CONFIG_CONTENT`: repository reads
+and edits are allowed, while shell, subagent, external-directory, web, install, branch, destructive,
+commit, and push capabilities are denied. Only the DeepSeek key and isolated `/tmp` configuration
+paths enter the container environment. The key is inherited through the Docker process environment,
+not included in command arguments or audit payloads.
+
+Coding delegation uses network access to contact DeepSeek, so every task is a `risky` action requiring
+individual approval. After execution, the adapter captures Git status, diff summary, bounded diff,
+changed files, the OpenCode report, and separately executed offline test results. Success requires the
+repository snapshot to change, all expected files to appear in Git evidence, and every requested test
+to pass. Existing dirty state is reported explicitly.
+
 ## Model boundaries
 
 | Role | Provider | Authority |

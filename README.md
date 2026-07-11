@@ -2,7 +2,7 @@
 
 A privacy-conscious personal AI agent that runs independently on a single Mac or VPS.
 
-The first release provides a CLI foundation with provider-neutral model fallback, durable approval checkpoints, audited persistence, Todoist operations, source-based DuckDuckGo research, and approval-gated Docker execution. OpenCode, Telegram polling, and retrieval-augmented memory follow in later phases.
+The first release provides a CLI foundation with provider-neutral model fallback, durable approval checkpoints, audited persistence, Todoist operations, source-based DuckDuckGo research, approval-gated Docker execution, and sandboxed OpenCode delegation. Telegram polling and retrieval-augmented memory follow in later phases.
 
 ## Architecture
 
@@ -18,6 +18,8 @@ OpenCode + local shell + approved workspaces
 Each installation owns its own sessions, policy, orchestration, audit records, and local workspace. Models propose actions; deterministic policy code authorizes them. VPS-to-Mac coordination is deferred to v2.
 
 See [the architecture](docs/architecture.md), [the implementation backlog](docs/backlog.md), and [the first architecture decision](docs/decisions/0001-single-host-v1.md).
+
+For laptop setup and an end-to-end CLI walkthrough, see [Run locally on a Mac](docs/getting-started.md).
 
 ## Repository layout
 
@@ -51,4 +53,4 @@ uv run ruff check .
 
 Set only the integrations you intend to use. Startup validation requires credentials only for integrations whose `enabled` flag is `true`.
 
-P0 through P2 are complete. Build the sandbox image with `docker build -t personal-agent-sandbox:latest docker/sandbox`, enable local execution in `.env`, then start a session with `personal-agent session start`. Submit work with `personal-agent run`, and resume paused writes or risky actions with `personal-agent approve` or `personal-agent deny`. Docker networking stays disabled unless an individually approved risky command requests it.
+P0 through P3 are complete. Build the sandbox image with `docker build -t personal-agent-sandbox:latest docker/sandbox`, enable local execution and OpenCode in `.env`, then start a session with `personal-agent session start`. Submit work with `personal-agent run`, and resume paused writes or risky actions with `personal-agent approve` or `personal-agent deny`. Docker networking stays disabled except for individually approved actions such as a DeepSeek-backed OpenCode task.

@@ -48,13 +48,13 @@ Items are ordered by dependency and user value. An item is complete only when it
 
 ## P3 — OpenCode coding delegation
 
-- [ ] Add the OpenCode adapter and DeepSeek profile.
+- [x] Add the OpenCode adapter and DeepSeek profile.
   - Starts only for an approved host-local workspace and passes a structured task contract.
-- [ ] Capture coding evidence.
+- [x] Capture coding evidence.
   - Returns changed files, diff summary, command/test results, and a concise execution report.
-- [ ] Add named-repository access grants.
+- [x] Add named-repository access grants.
   - Requires an explicit repository path; branch changes, remote pushes, installs, and destructive commands remain risky actions.
-- [ ] Add code-task evaluations.
+- [x] Add code-task evaluations.
   - Tests repository creation, workspace escape rejection, failed tests, and requested-change verification.
 
 ## P4 — Telegram and operational polish

@@ -69,6 +69,13 @@ def clear_agent_environment(monkeypatch: pytest.MonkeyPatch) -> None:
         "PERSONAL_AGENT_LOCAL_EXECUTION__MEMORY_LIMIT",
         "PERSONAL_AGENT_LOCAL_EXECUTION__CPU_LIMIT",
         "PERSONAL_AGENT_LOCAL_EXECUTION__PIDS_LIMIT",
+        "PERSONAL_AGENT_LOCAL_EXECUTION__REPOSITORY_PATHS",
+        "PERSONAL_AGENT_OPENCODE__ENABLED",
+        "PERSONAL_AGENT_OPENCODE__EXECUTABLE",
+        "PERSONAL_AGENT_OPENCODE__MODEL",
+        "PERSONAL_AGENT_OPENCODE__TIMEOUT_SECONDS",
+        "PERSONAL_AGENT_OPENCODE__MAX_DIFF_CHARS",
+        "PERSONAL_AGENT_OPENCODE__MAX_REPORT_CHARS",
     ):
         monkeypatch.delenv(name, raising=False)
 
@@ -178,3 +185,27 @@ def test_coordinator_requires_models_and_enabled_builtin_providers() -> None:
         "openai",
         "deepseek",
     ]
+
+
+def test_opencode_requires_local_execution_and_deepseek() -> None:
+    with pytest.raises(ValidationError, match="local_execution"):
+        SettingsWithoutDotEnv(opencode={"enabled": True})
+
+    with pytest.raises(ValidationError, match="deepseek"):
+        SettingsWithoutDotEnv(
+            local_execution={"enabled": True},
+            opencode={"enabled": True},
+        )
+
+    settings = SettingsWithoutDotEnv(
+        local_execution={
+            "enabled": True,
+            "repository_paths": ["~/source/project"],
+        },
+        deepseek=DeepSeekSettings(enabled=True, api_key=SecretStr("secret")),
+        opencode={"enabled": True},
+    )
+
+    assert settings.opencode.enabled is True
+    assert settings.opencode.model == "deepseek/deepseek-chat"
+    assert settings.local_execution.repository_paths[0].is_absolute()

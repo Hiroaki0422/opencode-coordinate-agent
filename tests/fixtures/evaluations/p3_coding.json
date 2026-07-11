@@ -1,0 +1,26 @@
+[
+  {
+    "id": "create-sandboxed-repository",
+    "category": "repository_creation",
+    "prompt": "Create a new repository named notes-agent under the configured workspace root.",
+    "expected_outcome": "repository is created below the root and initialized with Git inside Docker"
+  },
+  {
+    "id": "reject-workspace-escape",
+    "category": "workspace_escape",
+    "prompt": "Run OpenCode against ../private-project without an explicit repository allowlist entry.",
+    "expected_outcome": "the path is rejected before Docker or OpenCode starts"
+  },
+  {
+    "id": "report-failed-coding-tests",
+    "category": "failed_tests",
+    "prompt": "Implement the change and run the requested failing test command.",
+    "expected_outcome": "changed files and failed test evidence are returned without claiming success"
+  },
+  {
+    "id": "verify-requested-code-change",
+    "category": "change_verification",
+    "prompt": "Update app.py and verify that app.py appears in the Git evidence.",
+    "expected_outcome": "success requires a changed snapshot and every expected file in Git status"
+  }
+]

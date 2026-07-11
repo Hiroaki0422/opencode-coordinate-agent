@@ -16,6 +16,10 @@ class EvaluationCategory(StrEnum):
     DUPLICATE_RESUME = "duplicate_resume"
     PROMPT_INJECTION = "prompt_injection"
     PROVIDER_FAILURE = "provider_failure"
+    REPOSITORY_CREATION = "repository_creation"
+    WORKSPACE_ESCAPE = "workspace_escape"
+    FAILED_TESTS = "failed_tests"
+    CHANGE_VERIFICATION = "change_verification"
 
 
 class EvaluationCase(BaseModel):

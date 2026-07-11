@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import os
+import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol
@@ -34,6 +35,7 @@ class CommandExecutor(Protocol):
         arguments: list[str],
         *,
         stdin: bytes | None = None,
+        environment: dict[str, str] | None = None,
         timeout_seconds: float,
     ) -> ProcessResult: ...
 
@@ -46,6 +48,7 @@ class AsyncioCommandExecutor:
         arguments: list[str],
         *,
         stdin: bytes | None = None,
+        environment: dict[str, str] | None = None,
         timeout_seconds: float,
     ) -> ProcessResult:
         try:
@@ -54,6 +57,7 @@ class AsyncioCommandExecutor:
                 stdin=asyncio.subprocess.PIPE if stdin is not None else None,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
+                env={**os.environ, **(environment or {})},
             )
         except (FileNotFoundError, PermissionError) as error:
             raise SandboxUnavailableError("Docker CLI is unavailable") from error
@@ -95,8 +99,11 @@ class DockerSandbox:
     ) -> None:
         self._settings = settings
         self._executor = executor or AsyncioCommandExecutor()
+        self._healthy = False
 
     async def health_check(self) -> None:
+        if self._healthy:
+            return
         version = await self._executor.execute(
             ["docker", "version", "--format", "{{.Server.Version}}"],
             timeout_seconds=min(self._settings.command_timeout_seconds, 10.0),
@@ -111,6 +118,7 @@ class DockerSandbox:
             raise SandboxUnavailableError(
                 f"sandbox image {self._settings.docker_image!r} is unavailable"
             )
+        self._healthy = True
 
     async def run(
         self,
@@ -120,10 +128,13 @@ class DockerSandbox:
         writable: bool,
         network_enabled: bool = False,
         stdin: bytes | None = None,
+        environment: dict[str, str] | None = None,
+        timeout_seconds: float | None = None,
     ) -> SandboxResult:
         if not command or any("\x00" in argument for argument in command):
             raise SandboxExecutionError("sandbox command is invalid")
         workspace_path = self._resolve_workspace(workspace)
+        container_environment = self._validate_environment(environment or {})
         await self.health_check()
         mount_spec = f"type=bind,src={workspace_path},dst=/workspace"
         if not writable:
@@ -157,13 +168,15 @@ class DockerSandbox:
             mount_spec,
             "--workdir",
             "/workspace",
-            self._settings.docker_image,
-            *command,
         ]
+        for name in sorted(container_environment):
+            arguments.extend(["--env", name])
+        arguments.extend([self._settings.docker_image, *command])
         process_result = await self._executor.execute(
             arguments,
             stdin=stdin,
-            timeout_seconds=self._settings.command_timeout_seconds,
+            environment=container_environment,
+            timeout_seconds=timeout_seconds or self._settings.command_timeout_seconds,
         )
         output_limit = self._settings.max_output_bytes
         stdout = process_result.stdout
@@ -185,6 +198,17 @@ class DockerSandbox:
             candidate = workspace.expanduser().resolve(strict=True)
         except FileNotFoundError as error:
             raise SandboxExecutionError("workspace does not exist") from error
-        if not candidate.is_dir() or not candidate.is_relative_to(root):
+        named_repositories = {
+            path.resolve() for path in self._settings.repository_paths if path.exists()
+        }
+        allowed = candidate.is_relative_to(root) or candidate in named_repositories
+        if not candidate.is_dir() or not allowed:
             raise SandboxExecutionError("workspace is outside the configured workspace root")
         return candidate
+
+    @staticmethod
+    def _validate_environment(environment: dict[str, str]) -> dict[str, str]:
+        for name, value in environment.items():
+            if re.fullmatch(r"[A-Z_][A-Z0-9_]*", name) is None or "\x00" in value:
+                raise SandboxExecutionError("sandbox environment is invalid")
+        return environment

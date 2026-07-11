@@ -45,6 +45,8 @@ class ResponseVerifier:
             )
         if action.tool_name == "local_execution":
             return self._verify_local_execution(decision_message, action, result)
+        if action.tool_name == "opencode":
+            return self._verify_opencode(decision_message, result)
         return VerificationResult(
             success=True,
             response=f"{decision_message}\n\nTool result verified.",
@@ -77,6 +79,36 @@ class ResponseVerifier:
         return VerificationResult(
             success=True,
             response=f"{decision_message}\n\nLocal operation `{action.operation}` succeeded.",
+        )
+
+    def _verify_opencode(
+        self,
+        decision_message: str,
+        result: ToolExecutionResult,
+    ) -> VerificationResult:
+        changed_files = result.data.get("changed_files")
+        tests = result.data.get("tests")
+        report = result.data.get("report")
+        verified = result.data.get("requested_change_verified")
+        if not isinstance(changed_files, list) or not changed_files or verified is not True:
+            return VerificationResult(
+                success=False,
+                response="OpenCode returned no verified requested file changes.",
+            )
+        if not isinstance(tests, list) or any(
+            not isinstance(test, dict) or test.get("exit_code") != 0 for test in tests
+        ):
+            return VerificationResult(
+                success=False,
+                response="OpenCode changes were produced, but requested tests did not pass.",
+            )
+        files = ", ".join(str(path) for path in changed_files)
+        return VerificationResult(
+            success=True,
+            response=(
+                f"{decision_message}\n\nOpenCode report:\n{report or 'Task completed.'}\n\n"
+                f"Changed files: {files}. Requested tests passed."
+            ),
         )
 
     def _verify_todoist(

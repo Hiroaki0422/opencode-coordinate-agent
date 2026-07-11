@@ -13,7 +13,12 @@ import typer
 from langgraph.types import Command
 
 from personal_agent.core.config import Settings, get_settings
-from personal_agent.execution import DockerSandbox, LocalExecutionTool, WorkspaceService
+from personal_agent.execution import (
+    DockerSandbox,
+    LocalExecutionTool,
+    OpenCodeTool,
+    WorkspaceService,
+)
 from personal_agent.graph import AgentState, open_agent_graph
 from personal_agent.models import build_coordinator
 from personal_agent.observability import configure_logging
@@ -64,12 +69,28 @@ def _build_tool_gateway(settings: Settings, database: Database) -> ToolGateway:
         )
     if settings.local_execution.enabled:
         sandbox = DockerSandbox(settings.local_execution)
+        workspaces = WorkspaceService(
+            settings.local_execution.workspace_root,
+            sandbox,
+            settings.local_execution.repository_paths,
+        )
         gateway.register(
             LocalExecutionTool(
                 sandbox,
-                WorkspaceService(settings.local_execution.workspace_root, sandbox),
+                workspaces,
             )
         )
+        if settings.opencode.enabled:
+            if settings.deepseek.api_key is None:
+                raise ValueError("DeepSeek API key is not configured")
+            gateway.register(
+                OpenCodeTool(
+                    settings=settings.opencode,
+                    api_key=settings.deepseek.api_key.get_secret_value(),
+                    sandbox=sandbox,
+                    workspaces=workspaces,
+                )
+            )
     return gateway
 
 

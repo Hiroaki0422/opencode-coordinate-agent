@@ -113,3 +113,37 @@ async def test_research_requires_valid_citations_and_renders_sources() -> None:
     assert "Synthesis:" in valid.response
     assert "Retrieved sources:" in valid.response
     assert "https://example.com" in valid.response
+
+
+async def test_opencode_requires_verified_changes_and_passing_tests() -> None:
+    action = ActionRequest(
+        tool_name="opencode",
+        operation="code_task",
+        resource="/workspace/project",
+        risk_level=RiskLevel.RISKY,
+        summary="Update app",
+    )
+    result = ToolExecutionResult(
+        tool_name="opencode",
+        operation="code_task",
+        success=True,
+        data={
+            "changed_files": ["app.py"],
+            "tests": [{"command": ["pytest"], "exit_code": 0}],
+            "report": "Implemented the change.",
+            "requested_change_verified": True,
+        },
+        external_ids=["app.py"],
+    )
+
+    verification = await ResponseVerifier().verify(
+        user_input="Update app",
+        decision_message="Delegating the change.",
+        action=action,
+        result=result,
+        coordinator=FakeCoordinator([]),
+    )
+
+    assert verification.success is True
+    assert "app.py" in verification.response
+    assert "tests passed" in verification.response
