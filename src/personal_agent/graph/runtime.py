@@ -11,6 +11,7 @@ from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 from personal_agent.graph.workflow import CompiledAgentGraph, build_agent_graph
 from personal_agent.models import Coordinator
 from personal_agent.policy import PolicyService
+from personal_agent.tools import ResponseVerifier, ToolGateway
 
 
 @asynccontextmanager
@@ -19,6 +20,8 @@ async def open_agent_graph(
     checkpoint_path: Path,
     coordinator: Coordinator,
     policy: PolicyService,
+    gateway: ToolGateway | None = None,
+    verifier: ResponseVerifier | None = None,
 ) -> AsyncIterator[CompiledAgentGraph]:
     """Open the checkpoint database and yield a compiled graph."""
 
@@ -29,4 +32,6 @@ async def open_agent_graph(
             coordinator=coordinator,
             policy=policy,
             checkpointer=checkpointer,
+            gateway=gateway,
+            verifier=verifier,
         )

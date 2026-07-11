@@ -12,5 +12,6 @@ class AgentState(TypedDict):
     policy_decision: NotRequired[str]
     policy_reason: NotRequired[str]
     approval_request_id: NotRequired[str | None]
+    tool_result: NotRequired[dict[str, Any]]
     status: NotRequired[str]
     response: NotRequired[str]

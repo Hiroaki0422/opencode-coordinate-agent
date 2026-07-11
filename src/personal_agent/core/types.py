@@ -2,6 +2,7 @@
 
 from datetime import UTC, datetime
 from enum import StrEnum
+from typing import Any
 from uuid import UUID, uuid4
 
 from pydantic import BaseModel, Field
@@ -30,6 +31,7 @@ class ActionRequest(BaseModel):
     resource: str
     risk_level: RiskLevel
     summary: str
+    arguments: dict[str, Any] = Field(default_factory=dict)
 
 
 class ApprovalGrant(BaseModel):

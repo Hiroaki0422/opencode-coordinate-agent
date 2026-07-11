@@ -65,6 +65,22 @@ class TodoistSettings(BaseModel):
 
     enabled: bool = False
     api_token: SecretStr | None = None
+    base_url: str = "https://api.todoist.com/api/v1"
+    timeout_seconds: float = Field(default=15.0, gt=0)
+
+
+class ResearchSettings(BaseModel):
+    """Configuration for provider-neutral web research."""
+
+    enabled: bool = True
+    providers: list[str] = Field(default_factory=lambda: ["duckduckgo"])
+    max_results: int = Field(default=5, ge=1, le=10)
+    region: str = "us-en"
+    safe_search: str = "moderate"
+    search_timeout_seconds: float = Field(default=10.0, gt=0)
+    fetch_timeout_seconds: float = Field(default=15.0, gt=0)
+    max_page_bytes: int = Field(default=1_000_000, ge=1_024)
+    max_content_chars: int = Field(default=12_000, ge=500)
 
 
 class TelegramSettings(BaseModel):
@@ -121,6 +137,7 @@ class Settings(BaseSettings):
     deepseek: DeepSeekSettings = Field(default_factory=DeepSeekSettings)
     coordinator: CoordinatorSettings = Field(default_factory=CoordinatorSettings)
     todoist: TodoistSettings = Field(default_factory=TodoistSettings)
+    research: ResearchSettings = Field(default_factory=ResearchSettings)
     telegram: TelegramSettings = Field(default_factory=TelegramSettings)
     policy: PolicySettings = Field(default_factory=PolicySettings)
     local_execution: LocalExecutionSettings = Field(default_factory=LocalExecutionSettings)

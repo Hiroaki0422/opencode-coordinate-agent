@@ -6,14 +6,21 @@ from typing import Any, cast
 from uuid import uuid4
 
 from langgraph.types import Command
+from sqlalchemy import func, select
 
 from personal_agent.core.config import PolicySettings
 from personal_agent.core.types import ActionRequest, RiskLevel
 from personal_agent.graph import AgentState, open_agent_graph
-from personal_agent.models import CoordinatorDecision
+from personal_agent.models import CoordinatorDecision, GroundedResponse
 from personal_agent.persistence import Database
-from personal_agent.persistence.models import utc_now
+from personal_agent.persistence.models import AuditEventModel, utc_now
 from personal_agent.policy import PolicyService
+from personal_agent.tools import (
+    ResponseVerifier,
+    ToolEvidence,
+    ToolExecutionResult,
+    ToolGateway,
+)
 
 
 class FakeCoordinator:
@@ -25,6 +32,38 @@ class FakeCoordinator:
         del user_input
         self.calls += 1
         return self.decision
+
+    async def compose(
+        self,
+        user_input: str,
+        evidence: list[dict[str, Any]],
+    ) -> GroundedResponse:
+        del user_input
+        return GroundedResponse(
+            answer="Grounded answer",
+            citations=[str(item["identifier"]) for item in evidence],
+        )
+
+
+class FakeTodoistTool:
+    name = "todoist"
+
+    def __init__(self) -> None:
+        self.calls = 0
+
+    async def execute(self, action: ActionRequest) -> ToolExecutionResult:
+        self.calls += 1
+        return ToolExecutionResult(
+            tool_name=self.name,
+            operation=action.operation,
+            success=True,
+            data={"results": [{"id": "task-123", "content": "Task"}]},
+            external_ids=["task-123"],
+            evidence=[ToolEvidence(kind="todoist_task", identifier="task-123")],
+        )
+
+    async def aclose(self) -> None:
+        return None
 
 
 async def create_session(database: Database) -> str:
@@ -130,3 +169,99 @@ async def test_graph_records_denied_human_decision(
 
     assert denied["status"] == "denied"
     assert "human denied" in denied["response"]
+
+
+async def test_graph_executes_and_verifies_registered_read_tool(
+    database: Database,
+    tmp_path: Path,
+) -> None:
+    session_id = await create_session(database)
+    run_id = str(uuid4())
+    coordinator = FakeCoordinator(
+        CoordinatorDecision(
+            message="I found your tasks.",
+            action=ActionRequest(
+                tool_name="todoist",
+                operation="list_tasks",
+                resource="all",
+                risk_level=RiskLevel.READ,
+                summary="List tasks",
+            ),
+        )
+    )
+    gateway = ToolGateway(database)
+    gateway.register(FakeTodoistTool())
+    state: AgentState = {
+        "session_id": session_id,
+        "run_id": run_id,
+        "user_input": "List my tasks",
+    }
+
+    async with open_agent_graph(
+        checkpoint_path=tmp_path / "checkpoints.sqlite3",
+        coordinator=coordinator,
+        policy=PolicyService(database, PolicySettings()),
+        gateway=gateway,
+        verifier=ResponseVerifier(),
+    ) as graph:
+        raw = await graph.ainvoke(
+            state,
+            config=cast(Any, {"configurable": {"thread_id": run_id}}),
+        )
+        result = cast(dict[str, Any], raw)
+
+    async with database.engine.connect() as connection:
+        tool_audits = await connection.scalar(
+            select(func.count())
+            .select_from(AuditEventModel)
+            .where(AuditEventModel.event_type.like("tool.%"))
+        )
+
+    assert result["status"] == "completed"
+    assert "task-123" in result["response"]
+    assert tool_audits == 2
+
+
+async def test_duplicate_resume_does_not_repeat_external_mutation(
+    database: Database,
+    tmp_path: Path,
+) -> None:
+    session_id = await create_session(database)
+    run_id = str(uuid4())
+    coordinator = FakeCoordinator(
+        CoordinatorDecision(
+            message="I can create that task.",
+            action=ActionRequest(
+                tool_name="todoist",
+                operation="create_task",
+                resource="inbox",
+                risk_level=RiskLevel.WRITE,
+                summary="Create task",
+                arguments={"content": "Task"},
+            ),
+        )
+    )
+    adapter = FakeTodoistTool()
+    gateway = ToolGateway(database)
+    gateway.register(adapter)
+    config = cast(Any, {"configurable": {"thread_id": run_id}})
+    state: AgentState = {
+        "session_id": session_id,
+        "run_id": run_id,
+        "user_input": "Create a task",
+    }
+
+    async with open_agent_graph(
+        checkpoint_path=tmp_path / "checkpoints.sqlite3",
+        coordinator=coordinator,
+        policy=PolicyService(database, PolicySettings()),
+        gateway=gateway,
+        verifier=ResponseVerifier(),
+    ) as graph:
+        await graph.ainvoke(state, config=config)
+        first_result = await graph.ainvoke(Command(resume=True), config=config)
+        second_result = await graph.ainvoke(Command(resume=True), config=config)
+
+    assert cast(dict[str, Any], first_result)["status"] == "completed"
+    assert cast(dict[str, Any], second_result)["status"] == "completed"
+    assert adapter.calls == 1

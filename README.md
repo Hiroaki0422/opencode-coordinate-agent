@@ -2,7 +2,7 @@
 
 A privacy-conscious personal AI agent that runs independently on a single Mac or VPS.
 
-The first release provides a CLI foundation with provider-neutral model fallback, durable approval checkpoints, and audited persistence. Todoist, source-based web research, approval-gated Docker execution, OpenCode, Telegram polling, and retrieval-augmented memory follow in later phases.
+The first release provides a CLI foundation with provider-neutral model fallback, durable approval checkpoints, audited persistence, Todoist operations, and source-based DuckDuckGo research. Approval-gated Docker execution, OpenCode, Telegram polling, and retrieval-augmented memory follow in later phases.
 
 ## Architecture
 
@@ -51,4 +51,4 @@ uv run ruff check .
 
 Set only the integrations you intend to use. Startup validation requires credentials only for integrations whose `enabled` flag is `true`.
 
-P0 is complete. Start a session with `personal-agent session start`, submit work with `personal-agent run`, and resume paused runs with `personal-agent approve` or `personal-agent deny`. Tool integrations begin in P1.
+P0 and P1 are complete. Start a session with `personal-agent session start`, submit work with `personal-agent run`, and resume paused writes with `personal-agent approve` or `personal-agent deny`. Configure Todoist and model credentials in `.env`; DuckDuckGo search requires no key.

@@ -59,7 +59,7 @@ ingress -> session -> classify -> plan -> policy check
                                       |
                                 pause / resume
                                       v
-execute local tool -> verify -> persist evidence -> response
+execute registered tool -> verify -> persist evidence -> response
 ```
 
 The initial graph has one coordinator backed by an ordered model fallback route. It delegates only when a task matches a concrete capability:
@@ -68,7 +68,21 @@ The initial graph has one coordinator backed by an ordered model fallback route.
 - **Tasks:** call the Todoist adapter through the tool gateway.
 - **Coding:** invoke the host-local OpenCode adapter with DeepSeek and return a summary, diff metadata, changed files, and test results.
 
-This is intentionally not a free-form multi-agent conversation. Graph edges and typed tool contracts make execution inspectable and testable.
+This is intentionally not a free-form multi-agent conversation. Graph edges and typed tool contracts make execution inspectable and testable. The tool gateway audits the start and outcome of every call. A verification node rejects unsupported success claims before rendering the response.
+
+## P1 tool integrations
+
+### Todoist
+
+The `TaskProvider` protocol separates task semantics from Todoist. The v1 Todoist adapter uses the current `/api/v1` endpoints, follows cursor pagination, deduplicates records by ID, and sends an idempotency request ID with mutations. Read operations require `read` risk; create, update, and complete operations require a policy-approved write action.
+
+### Web research
+
+The `SearchProvider` protocol and ordered `SearchRouter` keep research independent from the reasoning model. DuckDuckGo is the first no-key, best-effort adapter through the unofficial `ddgs` package. Other search providers can be registered later without changing graph nodes.
+
+Search results are fetched separately over HTTP. The fetcher accepts only public HTTP/HTTPS URLs, rejects literal private or reserved addresses, limits redirects, content types, bytes, and extracted text, and removes script/style content. Retrieved text is wrapped as untrusted web content before model synthesis.
+
+Research responses are rendered only when the synthesis cites source identifiers that exist in the retrieved evidence. The final response separates model synthesis from retrieved source URLs.
 
 ## Model boundaries
 

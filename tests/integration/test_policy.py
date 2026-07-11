@@ -122,6 +122,47 @@ async def test_revoked_write_grant_requires_approval_again(database: Database) -
     assert result.decision is PolicyDecision.REQUIRE_APPROVAL
 
 
+async def test_write_grant_does_not_authorize_a_different_resource(database: Database) -> None:
+    service = PolicyService(database, PolicySettings())
+    session_id = await create_session(database)
+    requested = await service.authorize(
+        session_id=session_id,
+        action=action(risk_level=RiskLevel.WRITE, resource="/workspace/one.md"),
+    )
+    assert requested.approval_request_id is not None
+    await service.approve(requested.approval_request_id)
+
+    result = await service.authorize(
+        session_id=session_id,
+        action=action(risk_level=RiskLevel.WRITE, resource="/workspace/two.md"),
+    )
+
+    assert result.decision is PolicyDecision.REQUIRE_APPROVAL
+
+
+async def test_expired_write_grant_requires_approval_again(database: Database) -> None:
+    service = PolicyService(database, PolicySettings())
+    session_id = await create_session(database)
+    requested = await service.authorize(
+        session_id=session_id,
+        action=action(risk_level=RiskLevel.WRITE),
+    )
+    assert requested.approval_request_id is not None
+    await service.approve(requested.approval_request_id)
+
+    async with database.engine.begin() as connection:
+        await connection.execute(
+            update(ApprovalGrantModel).values(expires_at=utc_now() - timedelta(minutes=1))
+        )
+
+    result = await service.authorize(
+        session_id=session_id,
+        action=action(risk_level=RiskLevel.WRITE),
+    )
+
+    assert result.decision is PolicyDecision.REQUIRE_APPROVAL
+
+
 async def test_expired_approval_is_denied_and_audited(database: Database) -> None:
     service = PolicyService(database, PolicySettings(approval_ttl_minutes=1))
     session_id = await create_session(database)

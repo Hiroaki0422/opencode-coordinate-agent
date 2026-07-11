@@ -28,13 +28,13 @@ Items are ordered by dependency and user value. An item is complete only when it
 
 ## P1 — Useful cloud tools
 
-- [ ] Implement the Todoist `TaskProvider` and adapter.
+- [x] Implement the Todoist `TaskProvider` and adapter.
   - Supports list, create, update, complete, and project lookup; writes require a matching session approval.
-- [ ] Implement web search, fetch, extraction, and citation contracts.
+- [x] Implement web search, fetch, extraction, and citation contracts.
   - Research replies retain source URLs and distinguish retrieved facts from the model's synthesis.
-- [ ] Add response verification nodes.
+- [x] Add response verification nodes.
   - Task responses include Todoist identifiers; research responses include sources; failed actions explain the failure without claiming success.
-- [ ] Add P0/P1 evaluation cases.
+- [x] Add P0/P1 evaluation cases.
   - Covers ordinary actions, expired grants, wrong resource scopes, duplicate execution after resume, and prompt injection in retrieved content.
 
 ## P2 — Local execution

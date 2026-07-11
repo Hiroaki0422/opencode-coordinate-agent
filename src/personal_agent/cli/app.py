@@ -19,6 +19,9 @@ from personal_agent.observability import configure_logging
 from personal_agent.persistence import Database
 from personal_agent.persistence.models import WorkflowRunStatus
 from personal_agent.policy import PolicyService
+from personal_agent.tools import ResponseVerifier, ToolGateway
+from personal_agent.tools.research import build_research_tool
+from personal_agent.tools.todoist import TodoistTaskProvider, TodoistTool
 
 app = typer.Typer(help="Permission-gated personal AI agent.", no_args_is_help=True)
 session_app = typer.Typer(help="Create and inspect bounded sessions.")
@@ -40,6 +43,25 @@ async def _open_database(settings: Settings) -> Database:
     database = Database(settings.database_url)
     await database.initialize()
     return database
+
+
+def _build_tool_gateway(settings: Settings, database: Database) -> ToolGateway:
+    gateway = ToolGateway(database)
+    if settings.research.enabled:
+        gateway.register(build_research_tool(settings.research))
+    if settings.todoist.enabled:
+        if settings.todoist.api_token is None:
+            raise ValueError("Todoist API token is not configured")
+        gateway.register(
+            TodoistTool(
+                TodoistTaskProvider(
+                    api_token=settings.todoist.api_token.get_secret_value(),
+                    base_url=settings.todoist.base_url,
+                    timeout_seconds=settings.todoist.timeout_seconds,
+                )
+            )
+        )
+    return gateway
 
 
 async def _create_session(database: Database, settings: Settings) -> UUID:
@@ -155,18 +177,25 @@ def run_request(
             )
             policy = PolicyService(database, settings.policy)
             coordinator = build_coordinator(settings)
+            gateway = _build_tool_gateway(settings, database)
+            verifier = ResponseVerifier()
             initial_state: AgentState = {
                 "session_id": str(active_session_id),
                 "run_id": str(run_id),
                 "user_input": prompt,
             }
             config = cast(Any, {"configurable": {"thread_id": str(run_id)}})
-            async with open_agent_graph(
-                checkpoint_path=settings.checkpoint_path,
-                coordinator=coordinator,
-                policy=policy,
-            ) as graph:
-                raw_result = await graph.ainvoke(initial_state, config=config)
+            try:
+                async with open_agent_graph(
+                    checkpoint_path=settings.checkpoint_path,
+                    coordinator=coordinator,
+                    policy=policy,
+                    gateway=gateway,
+                    verifier=verifier,
+                ) as graph:
+                    raw_result = await graph.ainvoke(initial_state, config=config)
+            finally:
+                await gateway.aclose()
             result = cast(dict[str, Any], raw_result)
             if result.get("__interrupt__"):
                 await _record_run_status(
@@ -176,10 +205,15 @@ def run_request(
                     current_node="approval",
                 )
             else:
+                terminal_status = (
+                    WorkflowRunStatus.FAILED
+                    if result.get("status") == "failed"
+                    else WorkflowRunStatus.SUCCEEDED
+                )
                 await _record_run_status(
                     database,
                     run_id=run_id,
-                    status=WorkflowRunStatus.SUCCEEDED,
+                    status=terminal_status,
                 )
             return _render_graph_result(
                 result,
@@ -203,18 +237,30 @@ async def _resume_run(run_id: UUID, *, approved: bool) -> str:
             session_id = UUID(run.session_id)
         policy = PolicyService(database, settings.policy)
         coordinator = build_coordinator(settings)
+        gateway = _build_tool_gateway(settings, database)
+        verifier = ResponseVerifier()
         config = cast(Any, {"configurable": {"thread_id": str(run_id)}})
-        async with open_agent_graph(
-            checkpoint_path=settings.checkpoint_path,
-            coordinator=coordinator,
-            policy=policy,
-        ) as graph:
-            raw_result = await graph.ainvoke(Command(resume=approved), config=config)
+        try:
+            async with open_agent_graph(
+                checkpoint_path=settings.checkpoint_path,
+                coordinator=coordinator,
+                policy=policy,
+                gateway=gateway,
+                verifier=verifier,
+            ) as graph:
+                raw_result = await graph.ainvoke(Command(resume=approved), config=config)
+        finally:
+            await gateway.aclose()
         result = cast(dict[str, Any], raw_result)
+        terminal_status = (
+            WorkflowRunStatus.FAILED
+            if result.get("status") == "failed"
+            else WorkflowRunStatus.SUCCEEDED
+        )
         await _record_run_status(
             database,
             run_id=run_id,
-            status=WorkflowRunStatus.SUCCEEDED,
+            status=terminal_status,
         )
         return _render_graph_result(result, session_id=session_id, run_id=run_id)
     finally:

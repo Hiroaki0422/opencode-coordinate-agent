@@ -14,6 +14,7 @@ from personal_agent.core.types import ActionRequest
 from personal_agent.graph.state import AgentState
 from personal_agent.models import Coordinator
 from personal_agent.policy import PolicyDecision, PolicyService
+from personal_agent.tools import ResponseVerifier, ToolExecutionResult, ToolGateway
 
 CompiledAgentGraph = CompiledStateGraph[AgentState, None, AgentState, AgentState]
 
@@ -23,6 +24,8 @@ def build_agent_graph(
     coordinator: Coordinator,
     policy: PolicyService,
     checkpointer: BaseCheckpointSaver[Any],
+    gateway: ToolGateway | None = None,
+    verifier: ResponseVerifier | None = None,
 ) -> CompiledAgentGraph:
     """Compile the P0 graph around injected model and policy services."""
 
@@ -56,17 +59,17 @@ def build_agent_graph(
 
     def route_after_policy(
         state: AgentState,
-    ) -> Literal["approval", "authorized", "denied"]:
+    ) -> Literal["approval", "execute", "authorized", "denied"]:
         decision = PolicyDecision(state["policy_decision"])
         if decision is PolicyDecision.REQUIRE_APPROVAL:
             return "approval"
         if decision is PolicyDecision.ALLOW:
-            return "authorized"
+            return "execute" if gateway is not None else "authorized"
         return "denied"
 
     async def request_approval(
         state: AgentState,
-    ) -> Command[Literal["authorized", "denied"]]:
+    ) -> Command[Literal["execute", "authorized", "denied"]]:
         request_id_value = state.get("approval_request_id")
         if request_id_value is None:
             raise ValueError("approval node requires an approval request id")
@@ -87,7 +90,7 @@ def build_agent_graph(
         if approved:
             await policy.approve(request_id)
             return Command(
-                goto="authorized",
+                goto="execute" if gateway is not None else "authorized",
                 update={"policy_decision": PolicyDecision.ALLOW.value},
             )
         await policy.deny(request_id)
@@ -98,6 +101,39 @@ def build_agent_graph(
                 "policy_reason": "human denied the requested action",
             },
         )
+
+    async def execute_tool(state: AgentState) -> dict[str, Any]:
+        if gateway is None:
+            raise ValueError("tool execution requires a gateway")
+        raw_action = state.get("action")
+        if raw_action is None:
+            raise ValueError("tool execution requires an action")
+        action = ActionRequest.model_validate(raw_action)
+        result = await gateway.execute(
+            session_id=UUID(state["session_id"]),
+            run_id=UUID(state["run_id"]),
+            action=action,
+        )
+        return {"tool_result": result.model_dump(mode="json"), "status": "tool_executed"}
+
+    async def verify_tool_result(state: AgentState) -> dict[str, Any]:
+        if verifier is None:
+            raise ValueError("tool execution requires a response verifier")
+        raw_action = state.get("action")
+        raw_result = state.get("tool_result")
+        if raw_action is None or raw_result is None:
+            raise ValueError("verification requires an action and tool result")
+        verification = await verifier.verify(
+            user_input=state["user_input"],
+            decision_message=state["decision_message"],
+            action=ActionRequest.model_validate(raw_action),
+            result=ToolExecutionResult.model_validate(raw_result),
+            coordinator=coordinator,
+        )
+        return {
+            "status": "completed" if verification.success else "failed",
+            "response": verification.response,
+        }
 
     def respond(state: AgentState) -> dict[str, Any]:
         return {
@@ -125,6 +161,8 @@ def build_agent_graph(
     builder.add_node("coordinate", coordinate)
     builder.add_node("policy", evaluate_policy)
     builder.add_node("approval", request_approval)
+    builder.add_node("execute", execute_tool)
+    builder.add_node("verify", verify_tool_result)
     builder.add_node("respond", respond)
     builder.add_node("authorized", authorized)
     builder.add_node("denied", denied)
@@ -132,6 +170,8 @@ def build_agent_graph(
     builder.add_conditional_edges("coordinate", route_after_coordinate)
     builder.add_conditional_edges("policy", route_after_policy)
     builder.add_edge("respond", END)
+    builder.add_edge("execute", "verify")
+    builder.add_edge("verify", END)
     builder.add_edge("authorized", END)
     builder.add_edge("denied", END)
     return builder.compile(checkpointer=checkpointer)
