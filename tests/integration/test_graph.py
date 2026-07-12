@@ -8,10 +8,15 @@ from uuid import UUID, uuid4
 from langgraph.types import Command
 from sqlalchemy import func, select
 
-from personal_agent.core.config import PolicySettings
+from personal_agent.core.config import CodexSubscriptionSettings, PolicySettings
 from personal_agent.core.types import ActionRequest, RiskLevel
 from personal_agent.graph import AgentState, open_agent_graph
-from personal_agent.models import CoordinatorDecision, GroundedResponse
+from personal_agent.models import (
+    CodexCliRunner,
+    CodexSubscriptionCoordinator,
+    CoordinatorDecision,
+    GroundedResponse,
+)
 from personal_agent.persistence import Database
 from personal_agent.persistence.models import AuditEventModel, utc_now
 from personal_agent.policy import PolicyService
@@ -66,6 +71,25 @@ class FakeTodoistTool:
 
     async def aclose(self) -> None:
         return None
+
+
+class FakeCodexRunner:
+    async def health_check(self) -> str:
+        return "codex-cli 0.144.0-alpha.4"
+
+    async def invoke(self, **arguments: Any) -> dict[str, Any]:
+        del arguments
+        return {
+            "message": "I can run the coding task after approval.",
+            "action": {
+                "tool_name": "opencode",
+                "operation": "code_task",
+                "resource": "/workspace/project",
+                "risk_level": "risky",
+                "summary": "Update project",
+                "arguments": {"task": "Update project"},
+            },
+        }
 
 
 async def create_session(database: Database) -> str:
@@ -171,6 +195,40 @@ async def test_graph_records_denied_human_decision(
 
     assert denied["status"] == "denied"
     assert "human denied" in denied["response"]
+
+
+async def test_codex_proposed_action_still_pauses_at_policy(
+    database: Database,
+    tmp_path: Path,
+) -> None:
+    session_id = await create_session(database)
+    run_id = str(uuid4())
+    coordinator = CodexSubscriptionCoordinator(
+        runner=cast(CodexCliRunner, FakeCodexRunner()),
+        settings=CodexSubscriptionSettings(enabled=True),
+        model="gpt-5.4",
+    )
+    state: AgentState = {
+        "session_id": session_id,
+        "run_id": run_id,
+        "user_input": "Update project",
+    }
+
+    async with open_agent_graph(
+        checkpoint_path=tmp_path / "codex-checkpoints.sqlite3",
+        coordinator=coordinator,
+        policy=PolicyService(database, PolicySettings()),
+    ) as graph:
+        raw = await graph.ainvoke(
+            state,
+            config=cast(Any, {"configurable": {"thread_id": run_id}}),
+        )
+        result = cast(dict[str, Any], raw)
+
+    assert "__interrupt__" in result
+    interrupt_value = result["__interrupt__"][0].value
+    assert interrupt_value["tool_name"] == "opencode"
+    assert interrupt_value["risk_level"] == "risky"
 
 
 async def test_graph_executes_and_verifies_registered_read_tool(

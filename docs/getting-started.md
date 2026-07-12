@@ -53,6 +53,46 @@ Docker Desktop must be allowed to share those paths. Do not place real secrets i
 the coding worker can mount; `.env` reads and edits are denied, but repository contents are otherwise
 inside the coding trust boundary.
 
+### Optional: Use ChatGPT Codex instead of an OpenAI API key
+
+Install a supported Codex CLI, then authenticate using your ChatGPT account:
+
+```bash
+codex login --device-auth
+codex login status
+```
+
+The verified minimum version is `codex-cli 0.144.0-alpha.4`. Configure Codex as the only coordinator:
+
+```dotenv
+PERSONAL_AGENT_OPENAI__ENABLED=false
+PERSONAL_AGENT_OPENAI__API_KEY=
+PERSONAL_AGENT_CODEX_SUBSCRIPTION__ENABLED=true
+PERSONAL_AGENT_CODEX_SUBSCRIPTION__MODEL=gpt-5.4
+PERSONAL_AGENT_COORDINATOR__ENABLED=true
+PERSONAL_AGENT_COORDINATOR__MODELS='[{"provider":"codex-subscription","model":"gpt-5.4"}]'
+```
+
+Or place an API provider after it as an optional fallback. Confirm local authentication without using
+subscription tokens:
+
+```bash
+uv run personal-agent codex-health
+```
+
+Codex CLI owns and refreshes its OAuth credentials. The agent does not copy them into `.env`, SQLite,
+checkpoints, logs, or commands. If authentication expires, rerun `codex login --device-auth`. Use
+`codex logout` to disconnect the local CLI, or disable
+`PERSONAL_AGENT_CODEX_SUBSCRIPTION__ENABLED` and restore an API-backed coordinator route.
+
+An authenticated smoke test is intentionally skipped by default because it consumes subscription
+allowance. Run it only when desired:
+
+```bash
+PERSONAL_AGENT_RUN_CODEX_SMOKE=true \
+  uv run pytest tests/integration/test_codex_subscription_smoke.py -q
+```
+
 ## Start a Session
 
 ```bash

@@ -19,6 +19,7 @@ class SettingsWithoutDotEnv(Settings):
     """Load process environment variables without reading a developer's .env file."""
 
     model_config = SettingsConfigDict(
+        env_file=None,
         env_prefix="PERSONAL_AGENT_",
         env_nested_delimiter="__",
         extra="ignore",
@@ -76,6 +77,15 @@ def clear_agent_environment(monkeypatch: pytest.MonkeyPatch) -> None:
         "PERSONAL_AGENT_OPENCODE__TIMEOUT_SECONDS",
         "PERSONAL_AGENT_OPENCODE__MAX_DIFF_CHARS",
         "PERSONAL_AGENT_OPENCODE__MAX_REPORT_CHARS",
+        "PERSONAL_AGENT_CODEX_SUBSCRIPTION__ENABLED",
+        "PERSONAL_AGENT_CODEX_SUBSCRIPTION__EXECUTABLE",
+        "PERSONAL_AGENT_CODEX_SUBSCRIPTION__MODEL",
+        "PERSONAL_AGENT_CODEX_SUBSCRIPTION__TIMEOUT_SECONDS",
+        "PERSONAL_AGENT_CODEX_SUBSCRIPTION__WORKING_DIRECTORY",
+        "PERSONAL_AGENT_CODEX_SUBSCRIPTION__MAX_PROMPT_CHARS",
+        "PERSONAL_AGENT_CODEX_SUBSCRIPTION__MAX_RESPONSE_BYTES",
+        "PERSONAL_AGENT_CODEX_SUBSCRIPTION__MAX_STDERR_CHARS",
+        "PERSONAL_AGENT_CODEX_SUBSCRIPTION__CORRECTIVE_RETRIES",
     ):
         monkeypatch.delenv(name, raising=False)
 
@@ -209,3 +219,26 @@ def test_opencode_requires_local_execution_and_deepseek() -> None:
     assert settings.opencode.enabled is True
     assert settings.opencode.model == "deepseek/deepseek-chat"
     assert settings.local_execution.repository_paths[0].is_absolute()
+
+
+def test_codex_subscription_route_requires_no_api_key() -> None:
+    with pytest.raises(ValidationError, match="codex_subscription"):
+        SettingsWithoutDotEnv(
+            coordinator={
+                "enabled": True,
+                "models": [{"provider": "codex-subscription", "model": "gpt-5.4"}],
+            }
+        )
+
+    settings = SettingsWithoutDotEnv(
+        codex_subscription={"enabled": True},
+        coordinator={
+            "enabled": True,
+            "models": [{"provider": "codex-subscription", "model": "gpt-5.4"}],
+        },
+    )
+
+    assert settings.openai.enabled is False
+    assert settings.openai.api_key is None
+    assert settings.codex_subscription.enabled is True
+    assert settings.codex_subscription.working_directory.is_absolute()

@@ -124,6 +124,31 @@ changed files, the OpenCode report, and separately executed offline test results
 repository snapshot to change, all expected files to appear in Git evidence, and every requested test
 to pass. Existing dirty state is reported explicitly.
 
+## P3.5 Codex subscription coordinator
+
+The optional `codex-subscription` coordinator uses the official Codex CLI's ChatGPT login instead of
+an OpenAI API key. It is a reasoning provider only: models may return a typed `ActionRequest`, but the
+existing LangGraph policy, approval, tool gateway, and verification nodes retain all authority.
+
+Each request runs `codex exec` without a host shell in a unique empty temporary directory. The command
+uses read-only sandboxing, ephemeral sessions, ignored user configuration and rules, a JSON output
+schema, JSONL events, and a bounded final-response file. Shell and unified execution, apps, browser and
+computer use, plugins, hooks, image generation, multi-agent behavior, workspace dependencies, and MCP
+dependency installation are explicitly disabled. Prompts travel over stdin rather than command-line
+arguments, and the subprocess receives only an allowlist of path, home, temporary-directory, and TLS
+environment variables. API keys and unrelated host secrets are excluded.
+
+The coordinator validates responses as `CoordinatorDecision` or `GroundedResponse` and permits one
+bounded corrective retry by default. Ordered routing may mix Codex subscription and API-backed model
+groups. Fallback happens only for classified provider failures such as missing login, expired OAuth,
+subscription exhaustion, rate limits, timeout, malformed output, or retryable model HTTP failures;
+policy denials and application validation failures never trigger provider fallback.
+
+Local structured events record provider, CLI version, model, duration, sanitized exit class, retry
+count, response digest, and fallback selection without prompts or credentials. CLI startup probes the
+configured mixed route; `personal-agent codex-health` performs an explicit version and login check
+without consuming model tokens.
+
 ## Model boundaries
 
 | Role | Provider | Authority |

@@ -2,7 +2,7 @@
 
 A privacy-conscious personal AI agent that runs independently on a single Mac or VPS.
 
-The first release provides a CLI foundation with provider-neutral model fallback, durable approval checkpoints, audited persistence, Todoist operations, source-based DuckDuckGo research, approval-gated Docker execution, and sandboxed OpenCode delegation. Telegram polling and retrieval-augmented memory follow in later phases.
+The first release provides a CLI foundation with provider-neutral model fallback, optional ChatGPT Codex subscription coordination, durable approval checkpoints, audited persistence, Todoist operations, source-based DuckDuckGo research, approval-gated Docker execution, and sandboxed OpenCode delegation. Telegram polling and retrieval-augmented memory follow in later phases.
 
 ## Architecture
 
@@ -53,4 +53,4 @@ uv run ruff check .
 
 Set only the integrations you intend to use. Startup validation requires credentials only for integrations whose `enabled` flag is `true`.
 
-P0 through P3 are complete. Build the sandbox image with `docker build -t personal-agent-sandbox:latest docker/sandbox`, enable local execution and OpenCode in `.env`, then start a session with `personal-agent session start`. Submit work with `personal-agent run`, and resume paused writes or risky actions with `personal-agent approve` or `personal-agent deny`. Docker networking stays disabled except for individually approved actions such as a DeepSeek-backed OpenCode task.
+P0 through P3.5 are complete. Build the sandbox image with `docker build -t personal-agent-sandbox:latest docker/sandbox`, configure either API-backed models or the optional Codex subscription coordinator, and enable local execution/OpenCode as needed. Start with `personal-agent session start`, submit work with `personal-agent run`, and resume paused writes or risky actions with `personal-agent approve` or `personal-agent deny`. Docker networking stays disabled except for individually approved actions such as a DeepSeek-backed OpenCode task.

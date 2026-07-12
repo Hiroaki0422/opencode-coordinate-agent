@@ -12,9 +12,12 @@ from pydantic_ai.providers.deepseek import DeepSeekProvider
 from pydantic_ai.providers.openai import OpenAIProvider
 
 from personal_agent.core.config import ModelTarget, Settings
-from personal_agent.models.coordinator import PydanticCoordinator
+from personal_agent.models.codex_cli import CodexCliRunner
+from personal_agent.models.codex_subscription import CodexSubscriptionCoordinator
+from personal_agent.models.coordinator import Coordinator, FallbackCoordinator, PydanticCoordinator
 
 ModelBuilder = Callable[[ModelTarget, Settings], Model]
+CodexRunnerBuilder = Callable[[Settings], CodexCliRunner]
 
 
 class ModelRegistry:
@@ -66,11 +69,43 @@ def build_coordinator(
     settings: Settings,
     *,
     registry: ModelRegistry | None = None,
-) -> PydanticCoordinator:
+    codex_runner_builder: CodexRunnerBuilder | None = None,
+) -> Coordinator:
     """Build the configured coordinator and its ordered fallback route."""
 
     if not settings.coordinator.enabled:
         raise ValueError("the coordinator is disabled")
     selected_registry = registry or default_model_registry()
-    model = selected_registry.build_route(settings.coordinator.models, settings)
-    return PydanticCoordinator(model)
+    selected_codex_builder = codex_runner_builder or (
+        lambda active_settings: CodexCliRunner(active_settings.codex_subscription)
+    )
+    candidates: list[tuple[str, Coordinator]] = []
+    api_targets: list[ModelTarget] = []
+
+    def flush_api_targets() -> None:
+        if not api_targets:
+            return
+        label = "+".join(target.provider for target in api_targets)
+        model = selected_registry.build_route(list(api_targets), settings)
+        candidates.append((label, PydanticCoordinator(model)))
+        api_targets.clear()
+
+    for target in settings.coordinator.models:
+        if target.provider.lower() not in {"codex", "codex-subscription"}:
+            api_targets.append(target)
+            continue
+        flush_api_targets()
+        candidates.append(
+            (
+                "codex-subscription",
+                CodexSubscriptionCoordinator(
+                    runner=selected_codex_builder(settings),
+                    settings=settings.codex_subscription,
+                    model=target.model or settings.codex_subscription.model,
+                ),
+            )
+        )
+    flush_api_targets()
+    if len(candidates) == 1:
+        return candidates[0][1]
+    return FallbackCoordinator(candidates)

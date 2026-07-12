@@ -138,6 +138,28 @@ class OpenCodeSettings(BaseModel):
     max_report_chars: int = Field(default=8_000, ge=500)
 
 
+class CodexSubscriptionSettings(BaseModel):
+    """Configuration for ChatGPT subscription access through Codex CLI."""
+
+    enabled: bool = False
+    executable: str = "codex"
+    model: str = "gpt-5.4"
+    timeout_seconds: float = Field(default=120.0, gt=0)
+    working_directory: Path = Field(
+        default=Path("/tmp/personal-agent-codex"),
+        validate_default=True,
+    )
+    max_prompt_chars: int = Field(default=80_000, ge=1_000)
+    max_response_bytes: int = Field(default=256_000, ge=1_024)
+    max_stderr_chars: int = Field(default=2_000, ge=256)
+    corrective_retries: int = Field(default=1, ge=0, le=2)
+
+    @field_validator("working_directory", mode="after")
+    @classmethod
+    def expand_working_directory(cls, value: Path) -> Path:
+        return value.expanduser()
+
+
 class Settings(BaseSettings):
     """Configuration loaded from the environment and an optional local .env file."""
 
@@ -166,6 +188,9 @@ class Settings(BaseSettings):
     policy: PolicySettings = Field(default_factory=PolicySettings)
     local_execution: LocalExecutionSettings = Field(default_factory=LocalExecutionSettings)
     opencode: OpenCodeSettings = Field(default_factory=OpenCodeSettings)
+    codex_subscription: CodexSubscriptionSettings = Field(
+        default_factory=CodexSubscriptionSettings
+    )
 
     @field_validator("data_dir", "checkpoint_path", "policy_path", mode="after")
     @classmethod
@@ -206,6 +231,11 @@ class Settings(BaseSettings):
                 raise ValueError("openai must be enabled for an OpenAI coordinator target")
             if "deepseek" in configured_providers and not self.deepseek.enabled:
                 raise ValueError("deepseek must be enabled for a DeepSeek coordinator target")
+            codex_providers = {"codex", "codex-subscription"}
+            if configured_providers & codex_providers and not self.codex_subscription.enabled:
+                raise ValueError(
+                    "codex_subscription must be enabled for a Codex coordinator target"
+                )
         if self.telegram.enabled:
             if self.telegram.bot_token is None:
                 raise ValueError("telegram.bot_token is required when telegram.enabled is true")

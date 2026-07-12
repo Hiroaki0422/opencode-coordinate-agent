@@ -20,7 +20,7 @@ from personal_agent.execution import (
     WorkspaceService,
 )
 from personal_agent.graph import AgentState, open_agent_graph
-from personal_agent.models import build_coordinator
+from personal_agent.models import CodexCliRunner, build_coordinator, health_check_coordinator
 from personal_agent.observability import configure_logging
 from personal_agent.persistence import Database
 from personal_agent.persistence.models import WorkflowRunStatus
@@ -188,6 +188,28 @@ def start_session() -> None:
     typer.echo(_run_async(execute()))
 
 
+@app.command("codex-health")
+def codex_health() -> None:
+    """Verify Codex CLI version and ChatGPT subscription login without inference."""
+
+    async def execute() -> str:
+        settings = _settings()
+        if not settings.codex_subscription.enabled:
+            raise typer.BadParameter("codex_subscription is not enabled")
+        version = await CodexCliRunner(settings.codex_subscription).health_check()
+        return json.dumps(
+            {
+                "provider": "codex-subscription",
+                "status": "healthy",
+                "version": version,
+                "model": settings.codex_subscription.model,
+            },
+            indent=2,
+        )
+
+    typer.echo(_run_async(execute()))
+
+
 @app.command("run")
 def run_request(
     prompt: str = typer.Argument(..., help="Request for the coordinator."),
@@ -207,6 +229,7 @@ def run_request(
             )
             policy = PolicyService(database, settings.policy)
             coordinator = build_coordinator(settings)
+            await health_check_coordinator(coordinator)
             gateway = _build_tool_gateway(settings, database)
             verifier = ResponseVerifier()
             initial_state: AgentState = {
@@ -267,6 +290,7 @@ async def _resume_run(run_id: UUID, *, approved: bool) -> str:
             session_id = UUID(run.session_id)
         policy = PolicyService(database, settings.policy)
         coordinator = build_coordinator(settings)
+        await health_check_coordinator(coordinator)
         gateway = _build_tool_gateway(settings, database)
         verifier = ResponseVerifier()
         config = cast(Any, {"configurable": {"thread_id": str(run_id)}})

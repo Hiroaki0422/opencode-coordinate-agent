@@ -3,13 +3,16 @@
 from __future__ import annotations
 
 import json
-from typing import Any, Protocol
+from collections.abc import Awaitable, Callable
+from typing import Any, Protocol, TypeVar, cast
 
 from pydantic import BaseModel, Field
 from pydantic_ai import Agent
+from pydantic_ai.exceptions import ModelAPIError, ModelHTTPError
 from pydantic_ai.models import Model
 
 from personal_agent.core.types import ActionRequest
+from personal_agent.observability import get_logger
 
 COORDINATOR_INSTRUCTIONS = """
 You are the coordinator for a personal agent. Respond directly when no external action is needed.
@@ -106,3 +109,90 @@ class PydanticCoordinator:
         )
         result = await self._response_agent.run(prompt)
         return result.output
+
+
+ResultT = TypeVar("ResultT")
+
+
+class FallbackCoordinator:
+    """Preserve ordered fallback across heterogeneous coordinator implementations."""
+
+    def __init__(self, candidates: list[tuple[str, Coordinator]]) -> None:
+        if not candidates:
+            raise ValueError("a coordinator fallback route requires at least one candidate")
+        self._candidates = candidates
+
+    async def health_check(self) -> None:
+        healthy_candidate = False
+        failures: list[Exception] = []
+        for _, coordinator in self._candidates:
+            health_check = getattr(coordinator, "health_check", None)
+            if health_check is None:
+                healthy_candidate = True
+                continue
+            try:
+                await cast(Callable[[], Awaitable[None]], health_check)()
+                healthy_candidate = True
+            except Exception as error:
+                if not _is_provider_failure(error):
+                    raise
+                failures.append(error)
+        if not healthy_candidate and failures:
+            raise failures[0]
+
+    async def decide(self, user_input: str) -> CoordinatorDecision:
+        return await self._call("decide", lambda coordinator: coordinator.decide(user_input))
+
+    async def compose(
+        self,
+        user_input: str,
+        evidence: list[dict[str, Any]],
+    ) -> GroundedResponse:
+        return await self._call(
+            "compose",
+            lambda coordinator: coordinator.compose(user_input, evidence),
+        )
+
+    async def _call(
+        self,
+        operation: str,
+        invoke: Callable[[Coordinator], Awaitable[ResultT]],
+    ) -> ResultT:
+        first_failure: Exception | None = None
+        for index, (provider, coordinator) in enumerate(self._candidates):
+            try:
+                return await invoke(coordinator)
+            except Exception as error:
+                if not _is_provider_failure(error):
+                    raise
+                first_failure = first_failure or error
+                get_logger(__name__).warning(
+                    "coordinator.fallback",
+                    operation=operation,
+                    failed_provider=provider,
+                    next_provider=(
+                        self._candidates[index + 1][0]
+                        if index + 1 < len(self._candidates)
+                        else None
+                    ),
+                    failure_type=type(error).__name__,
+                )
+        if first_failure is None:
+            raise RuntimeError("coordinator fallback route produced no result")
+        raise first_failure
+
+
+def _is_provider_failure(error: Exception) -> bool:
+    from personal_agent.models.codex_cli import CodexCliProviderError
+
+    if isinstance(error, CodexCliProviderError):
+        return True
+    if isinstance(error, ModelHTTPError):
+        return error.status_code in {408, 409, 429} or error.status_code >= 500
+    return isinstance(error, ModelAPIError)
+
+
+async def health_check_coordinator(coordinator: Coordinator) -> None:
+    health_check = getattr(coordinator, "health_check", None)
+    if health_check is not None:
+        await cast(Callable[[], Awaitable[None]], health_check)()
