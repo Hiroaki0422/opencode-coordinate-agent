@@ -87,7 +87,7 @@ class FakeCodexRunner:
                 "resource": "/workspace/project",
                 "risk_level": "risky",
                 "summary": "Update project",
-                "arguments": {"task": "Update project"},
+                "arguments_json": '{"task":"Update project"}',
             },
         }
 

@@ -25,6 +25,7 @@ from personal_agent.models.codex_cli import (
     CodexProcessExecutor,
     CodexProcessResult,
 )
+from personal_agent.models.codex_subscription import CodexDecisionWire
 
 EXEC_HELP = " ".join(
     [
@@ -38,6 +39,16 @@ EXEC_HELP = " ".join(
         "--output-last-message",
     ]
 )
+
+
+def test_codex_wire_schema_is_strict_and_has_no_arbitrary_object() -> None:
+    schema = CodexDecisionWire.model_json_schema()
+
+    assert schema["additionalProperties"] is False
+    assert set(schema["required"]) == {"message", "action"}
+    action_schema = schema["$defs"]["CodexActionWire"]
+    assert action_schema["additionalProperties"] is False
+    assert "arguments_json" in action_schema["required"]
 
 
 class FakeExecutor:

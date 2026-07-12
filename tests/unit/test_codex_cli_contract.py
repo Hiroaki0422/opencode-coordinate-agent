@@ -73,10 +73,18 @@ def test_jsonl_parser_rejects_non_object_or_malformed_events() -> None:
             CodexCliFailure.EXPIRED_AUTHORIZATION,
         ),
         (
+            {"exit_code": 1, "stderr": "401 token_revoked"},
+            CodexCliFailure.EXPIRED_AUTHORIZATION,
+        ),
+        (
             {"exit_code": 1, "stderr": "subscription usage limit reached"},
             CodexCliFailure.SUBSCRIPTION_EXHAUSTED,
         ),
         ({"exit_code": 1, "stderr": "HTTP 429 rate limit"}, CodexCliFailure.RATE_LIMITED),
+        (
+            {"exit_code": 1, "stderr": "model is not supported for this account"},
+            CodexCliFailure.UNSUPPORTED_MODEL,
+        ),
         ({"exit_code": 2, "stderr": "unexpected argument"}, CodexCliFailure.PROCESS_FAILURE),
         ({"exit_code": 0}, None),
     ],

@@ -170,6 +170,12 @@ class CodexCliProviderError(RuntimeError):
             return "Codex CLI is not logged in; run `codex login --device-auth`"
         if failure is CodexCliFailure.MISSING_EXECUTABLE:
             return "Codex CLI executable was not found"
+        if failure is CodexCliFailure.EXPIRED_AUTHORIZATION:
+            return "Codex authorization expired; sign in again using the configured CODEX_HOME"
+        if failure is CodexCliFailure.UNSUPPORTED_MODEL:
+            return "Configured Codex model is unavailable for this ChatGPT account"
+        if failure is CodexCliFailure.MALFORMED_OUTPUT:
+            return "Codex returned or rejected malformed structured output"
         return f"Codex subscription provider failed: {failure.value}"
 
 
@@ -344,13 +350,15 @@ class CodexCliRunner:
         command.append("-")
         return command
 
-    @staticmethod
-    def _environment() -> dict[str, str]:
-        return {
+    def _environment(self) -> dict[str, str]:
+        environment = {
             name: os.environ[name]
             for name in _ENVIRONMENT_ALLOWLIST
             if name in os.environ
         }
+        if self._settings.codex_home is not None:
+            environment["CODEX_HOME"] = str(self._settings.codex_home)
+        return environment
 
     @staticmethod
     async def _log_record(record: CodexInvocationRecord) -> None:

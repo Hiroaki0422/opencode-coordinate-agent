@@ -69,6 +69,7 @@ PERSONAL_AGENT_OPENAI__ENABLED=false
 PERSONAL_AGENT_OPENAI__API_KEY=
 PERSONAL_AGENT_CODEX_SUBSCRIPTION__ENABLED=true
 PERSONAL_AGENT_CODEX_SUBSCRIPTION__MODEL=gpt-5.4
+PERSONAL_AGENT_CODEX_SUBSCRIPTION__CODEX_HOME=~/.personal-agent/codex-auth
 PERSONAL_AGENT_COORDINATOR__ENABLED=true
 PERSONAL_AGENT_COORDINATOR__MODELS='[{"provider":"codex-subscription","model":"gpt-5.4"}]'
 ```
@@ -78,6 +79,13 @@ subscription tokens:
 
 ```bash
 uv run personal-agent codex-health
+```
+
+Create and authenticate the dedicated credential directory configured above:
+
+```bash
+mkdir -p "$HOME/.personal-agent/codex-auth"
+CODEX_HOME="$HOME/.personal-agent/codex-auth" codex login --device-auth
 ```
 
 Codex CLI owns and refreshes its OAuth credentials. The agent does not copy them into `.env`, SQLite,

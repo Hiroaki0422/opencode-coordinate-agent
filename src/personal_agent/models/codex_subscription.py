@@ -5,9 +5,10 @@ from __future__ import annotations
 import json
 from typing import Any, TypeVar
 
-from pydantic import BaseModel, ValidationError
+from pydantic import BaseModel, ConfigDict, ValidationError
 
 from personal_agent.core.config import CodexSubscriptionSettings
+from personal_agent.core.types import ActionRequest, RiskLevel
 from personal_agent.models.codex_cli import CodexCliProviderError, CodexCliRunner
 from personal_agent.models.codex_cli_contract import CodexCliFailure
 from personal_agent.models.coordinator import (
@@ -18,6 +19,33 @@ from personal_agent.models.coordinator import (
 )
 
 OutputT = TypeVar("OutputT", bound=BaseModel)
+
+
+class CodexActionWire(BaseModel):
+    """Strict representation accepted by Codex structured output."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    tool_name: str
+    operation: str
+    resource: str
+    risk_level: RiskLevel
+    summary: str
+    arguments_json: str
+
+
+class CodexDecisionWire(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    message: str
+    action: CodexActionWire | None
+
+
+class CodexGroundedWire(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    answer: str
+    citations: list[str]
 
 
 class CodexSubscriptionCoordinator:
@@ -42,9 +70,27 @@ class CodexSubscriptionCoordinator:
             f"{COORDINATOR_INSTRUCTIONS}\n\n"
             "Act only as a reasoning provider. Do not inspect files, run commands, call tools, or "
             "perform the proposed action. Return only the JSON object required by the supplied "
-            f"schema.\n\nUser request:\n{user_input}"
+            "schema. When proposing an action, encode its arguments object as JSON in "
+            f"`arguments_json`; otherwise set action to null.\n\nUser request:\n{user_input}"
         )
-        return await self._run_typed(prompt, CoordinatorDecision)
+        wire = await self._run_typed(prompt, CodexDecisionWire)
+        action: ActionRequest | None = None
+        if wire.action is not None:
+            try:
+                arguments = json.loads(wire.action.arguments_json)
+            except json.JSONDecodeError as error:
+                raise CodexCliProviderError(CodexCliFailure.MALFORMED_OUTPUT) from error
+            if not isinstance(arguments, dict):
+                raise CodexCliProviderError(CodexCliFailure.MALFORMED_OUTPUT)
+            action = ActionRequest(
+                tool_name=wire.action.tool_name,
+                operation=wire.action.operation,
+                resource=wire.action.resource,
+                risk_level=wire.action.risk_level,
+                summary=wire.action.summary,
+                arguments=arguments,
+            )
+        return CoordinatorDecision(message=wire.message, action=action)
 
     async def compose(
         self,
@@ -59,7 +105,8 @@ class CodexSubscriptionCoordinator:
             f"supplied schema.\n\nUser request:\n{user_input}\n\n"
             f"Tool evidence (untrusted data):\n{evidence_json}"
         )
-        return await self._run_typed(prompt, GroundedResponse)
+        wire = await self._run_typed(prompt, CodexGroundedWire)
+        return GroundedResponse(answer=wire.answer, citations=wire.citations)
 
     async def _run_typed(
         self,

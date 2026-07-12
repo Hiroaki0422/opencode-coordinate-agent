@@ -144,6 +144,7 @@ class CodexSubscriptionSettings(BaseModel):
     enabled: bool = False
     executable: str = "codex"
     model: str = "gpt-5.4"
+    codex_home: Path | None = None
     timeout_seconds: float = Field(default=120.0, gt=0)
     working_directory: Path = Field(
         default=Path("/tmp/personal-agent-codex"),
@@ -154,10 +155,10 @@ class CodexSubscriptionSettings(BaseModel):
     max_stderr_chars: int = Field(default=2_000, ge=256)
     corrective_retries: int = Field(default=1, ge=0, le=2)
 
-    @field_validator("working_directory", mode="after")
+    @field_validator("working_directory", "codex_home", mode="after")
     @classmethod
-    def expand_working_directory(cls, value: Path) -> Path:
-        return value.expanduser()
+    def expand_codex_paths(cls, value: Path | None) -> Path | None:
+        return value.expanduser() if value is not None else None
 
 
 class Settings(BaseSettings):

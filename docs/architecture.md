@@ -138,6 +138,13 @@ dependency installation are explicitly disabled. Prompts travel over stdin rathe
 arguments, and the subprocess receives only an allowlist of path, home, temporary-directory, and TLS
 environment variables. API keys and unrelated host secrets are excluded.
 
+Codex OAuth state uses a dedicated configured `CODEX_HOME` rather than the active IDE's default
+credential directory. This prevents independent CLI processes from racing on the same refresh token.
+The setting stores only the directory path; Codex CLI continues to own the token files. Coordinator
+output uses strict wire schemas with `additionalProperties: false`; arbitrary tool arguments cross the
+structured-output boundary as a JSON string and are parsed and validated before becoming an
+`ActionRequest`.
+
 The coordinator validates responses as `CoordinatorDecision` or `GroundedResponse` and permits one
 bounded corrective retry by default. Ordered routing may mix Codex subscription and API-backed model
 groups. Fallback happens only for classified provider failures such as missing login, expired OAuth,

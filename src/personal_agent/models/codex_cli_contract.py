@@ -44,6 +44,7 @@ class CodexCliFailure(StrEnum):
     UNSUPPORTED_VERSION = "unsupported_version"
     TIMEOUT = "timeout"
     PROCESS_FAILURE = "process_failure"
+    UNSUPPORTED_MODEL = "unsupported_model"
 
 
 class CodexCliContractError(ValueError):
@@ -136,7 +137,16 @@ def classify_codex_cli_failure(
         return CodexCliFailure.MISSING_LOGIN
     if any(
         marker in normalized
-        for marker in ("invalid_grant", "refresh token", "authorization expired")
+        for marker in (
+            "invalid_grant",
+            "refresh token",
+            "refresh_token_reused",
+            "token expired",
+            "token_expired",
+            "token revoked",
+            "token_revoked",
+            "authorization expired",
+        )
     ):
         return CodexCliFailure.EXPIRED_AUTHORIZATION
     if any(
@@ -146,4 +156,13 @@ def classify_codex_cli_failure(
         return CodexCliFailure.SUBSCRIPTION_EXHAUSTED
     if "rate limit" in normalized or "too many requests" in normalized or "http 429" in normalized:
         return CodexCliFailure.RATE_LIMITED
+    if "model" in normalized and any(
+        marker in normalized for marker in ("not supported", "not found", "unknown model")
+    ):
+        return CodexCliFailure.UNSUPPORTED_MODEL
+    if any(
+        marker in normalized
+        for marker in ("invalid schema", "json schema", "response_format")
+    ):
+        return CodexCliFailure.MALFORMED_OUTPUT
     return CodexCliFailure.PROCESS_FAILURE

@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from personal_agent.core.config import CodexSubscriptionSettings
+from personal_agent.core.config import Settings
 from personal_agent.models import CodexCliRunner, CodexSubscriptionCoordinator
 
 
@@ -14,9 +14,8 @@ from personal_agent.models import CodexCliRunner, CodexSubscriptionCoordinator
     reason="set PERSONAL_AGENT_RUN_CODEX_SMOKE=true to consume Codex subscription usage",
 )
 async def test_authenticated_codex_subscription_decision(tmp_path: Path) -> None:
-    settings = CodexSubscriptionSettings(
-        enabled=True,
-        working_directory=tmp_path,
+    settings = Settings().codex_subscription.model_copy(
+        update={"enabled": True, "working_directory": tmp_path}
     )
     coordinator = CodexSubscriptionCoordinator(
         runner=CodexCliRunner(settings),
