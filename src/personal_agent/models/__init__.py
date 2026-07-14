@@ -18,6 +18,7 @@ from personal_agent.models.codex_cli_contract import (
 )
 from personal_agent.models.codex_subscription import CodexSubscriptionCoordinator
 from personal_agent.models.coordinator import (
+    ConversationTurn,
     Coordinator,
     CoordinatorDecision,
     FallbackCoordinator,
@@ -32,6 +33,7 @@ __all__ = [
     "CodexCliContractError",
     "CodexCliFailure",
     "CodexCliVersion",
+    "ConversationTurn",
     "Coordinator",
     "CoordinatorDecision",
     "CodexCliProviderError",

@@ -88,6 +88,11 @@ class SecretRedactor:
         del logger, method_name
         return {key: self._redact(value, key=key) for key, value in event_dict.items()}
 
+    def redact_text(self, value: str) -> str:
+        """Redact configured credentials and authorization tokens from plain text."""
+
+        return cast(str, self._redact(value))
+
     def _redact(self, value: Any, *, key: object | None = None) -> Any:
         if key is not None and _normalize_field_name(key) in self._field_names:
             return REDACTED
@@ -157,6 +162,15 @@ def configure_logging(settings: Settings, *, stream: TextIO | None = None) -> No
     root_logger.addHandler(handler)
     root_logger.setLevel(settings.log_level)
     logging.captureWarnings(True)
+
+
+def redact_sensitive_text(settings: Settings, value: str) -> str:
+    """Apply the logging redaction policy before persisting user-visible text."""
+
+    return SecretRedactor(
+        field_names=settings.log_redacted_fields,
+        secret_values=_collect_secret_values(settings),
+    ).redact_text(value)
 
 
 def get_logger(name: str | None = None) -> structlog.stdlib.BoundLogger:

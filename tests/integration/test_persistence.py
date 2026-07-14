@@ -9,11 +9,17 @@ from sqlalchemy.exc import DatabaseError
 from sqlalchemy.sql.dml import Delete, Update
 
 from personal_agent.core.types import ActionRequest, ApprovalGrant, RiskLevel
-from personal_agent.persistence import Database, MissingAuditEventError
+from personal_agent.persistence import (
+    MAX_CONVERSATION_MESSAGE_CHARS,
+    ConversationMessageRole,
+    Database,
+    MissingAuditEventError,
+)
 from personal_agent.persistence.models import (
     ApprovalGrantModel,
     ApprovalRequestModel,
     AuditEventModel,
+    ConversationMessageModel,
     SessionModel,
     WorkflowRunModel,
     utc_now,
@@ -29,7 +35,10 @@ async def test_migrations_are_idempotent(database: Database) -> None:
         )
 
     applied_migrations = [tuple(row) for row in result]
-    assert applied_migrations == [(1, "initial persistence schema")]
+    assert applied_migrations == [
+        (1, "initial persistence schema"),
+        (2, "conversation message storage"),
+    ]
 
 
 async def test_state_change_and_audit_event_commit_atomically(database: Database) -> None:
@@ -139,6 +148,109 @@ async def test_approval_and_workflow_repositories_persist_records(database: Data
     assert request_count == 1
     assert grant_count == 1
     assert run_count == 1
+
+
+async def test_conversation_repository_persists_ordered_bounded_messages(
+    database: Database,
+) -> None:
+    session_id = uuid4()
+    run_id = uuid4()
+
+    async with database.unit_of_work() as unit_of_work:
+        await unit_of_work.sessions.create(
+            session_id=session_id,
+            expires_at=utc_now() + timedelta(hours=2),
+        )
+        await unit_of_work.workflow_runs.create(session_id=session_id, run_id=run_id)
+        await unit_of_work.conversations.create(
+            session_id=session_id,
+            run_id=run_id,
+            role=ConversationMessageRole.USER,
+            content="Update app.py",
+        )
+        await unit_of_work.conversations.create(
+            session_id=session_id,
+            run_id=run_id,
+            role=ConversationMessageRole.ASSISTANT,
+            content="Updated app.py",
+        )
+        await unit_of_work.audit.append(
+            event_type="conversation.messages_created",
+            actor="test",
+            session_id=session_id,
+            run_id=run_id,
+        )
+        await unit_of_work.commit()
+
+    async with database.unit_of_work() as unit_of_work:
+        messages = await unit_of_work.conversations.list_for_session(session_id)
+        latest = await unit_of_work.conversations.list_for_session(session_id, limit=1)
+        stored_messages = [(item.role, item.content) for item in messages]
+        latest_content = [item.content for item in latest]
+
+    assert stored_messages == [
+        (ConversationMessageRole.USER.value, "Update app.py"),
+        (ConversationMessageRole.ASSISTANT.value, "Updated app.py"),
+    ]
+    assert latest_content == ["Updated app.py"]
+
+
+async def test_conversation_repository_rejects_invalid_content(database: Database) -> None:
+    session_id = uuid4()
+    run_id = uuid4()
+
+    async with database.unit_of_work() as unit_of_work:
+        with pytest.raises(ValueError, match="cannot be empty"):
+            await unit_of_work.conversations.create(
+                session_id=session_id,
+                run_id=run_id,
+                role=ConversationMessageRole.USER,
+                content="   ",
+            )
+        with pytest.raises(ValueError, match="exceeds"):
+            await unit_of_work.conversations.create(
+                session_id=session_id,
+                run_id=run_id,
+                role=ConversationMessageRole.USER,
+                content="x" * (MAX_CONVERSATION_MESSAGE_CHARS + 1),
+            )
+
+
+async def test_conversation_messages_cascade_with_session(database: Database) -> None:
+    session_id = uuid4()
+    run_id = uuid4()
+
+    async with database.unit_of_work() as unit_of_work:
+        await unit_of_work.sessions.create(
+            session_id=session_id,
+            expires_at=utc_now() + timedelta(hours=2),
+        )
+        await unit_of_work.workflow_runs.create(session_id=session_id, run_id=run_id)
+        await unit_of_work.conversations.create(
+            session_id=session_id,
+            run_id=run_id,
+            role=ConversationMessageRole.USER,
+            content="Temporary message",
+        )
+        await unit_of_work.audit.append(
+            event_type="conversation.message_created",
+            actor="test",
+            session_id=session_id,
+            run_id=run_id,
+        )
+        await unit_of_work.commit()
+
+    async with database.engine.begin() as connection:
+        await connection.execute(
+            delete(SessionModel).where(SessionModel.id == str(session_id))
+        )
+
+    async with database.engine.connect() as connection:
+        message_count = await connection.scalar(
+            select(func.count()).select_from(ConversationMessageModel)
+        )
+
+    assert message_count == 0
 
 
 @pytest.mark.parametrize("statement_factory", [update, delete])

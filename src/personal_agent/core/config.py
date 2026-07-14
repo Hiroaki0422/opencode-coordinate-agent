@@ -98,6 +98,13 @@ class PolicySettings(BaseModel):
     approval_ttl_minutes: int = Field(default=15, gt=0)
 
 
+class ConversationSettings(BaseModel):
+    """Bounds for short-term conversation context supplied to coordinators."""
+
+    max_turns: int = Field(default=20, ge=1, le=100)
+    max_context_chars: int = Field(default=40_000, ge=1_000, le=200_000)
+
+
 class LocalExecutionSettings(BaseModel):
     """Configuration for shell and coding tools on the current host."""
 
@@ -187,6 +194,7 @@ class Settings(BaseSettings):
     research: ResearchSettings = Field(default_factory=ResearchSettings)
     telegram: TelegramSettings = Field(default_factory=TelegramSettings)
     policy: PolicySettings = Field(default_factory=PolicySettings)
+    conversation: ConversationSettings = Field(default_factory=ConversationSettings)
     local_execution: LocalExecutionSettings = Field(default_factory=LocalExecutionSettings)
     opencode: OpenCodeSettings = Field(default_factory=OpenCodeSettings)
     codex_subscription: CodexSubscriptionSettings = Field(

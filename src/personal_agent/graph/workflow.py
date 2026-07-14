@@ -12,7 +12,7 @@ from langgraph.types import Command, interrupt
 
 from personal_agent.core.types import ActionRequest
 from personal_agent.graph.state import AgentState
-from personal_agent.models import Coordinator
+from personal_agent.models import ConversationTurn, Coordinator
 from personal_agent.policy import PolicyDecision, PolicyService
 from personal_agent.tools import ResponseVerifier, ToolExecutionResult, ToolGateway
 
@@ -30,7 +30,11 @@ def build_agent_graph(
     """Compile the P0 graph around injected model and policy services."""
 
     async def coordinate(state: AgentState) -> dict[str, Any]:
-        decision = await coordinator.decide(state["user_input"])
+        history = tuple(
+            ConversationTurn.model_validate(item)
+            for item in state.get("conversation_history", [])
+        )
+        decision = await coordinator.decide(state["user_input"], history=history)
         return {
             "decision_message": decision.message,
             "action": decision.action.model_dump(mode="json") if decision.action else None,
@@ -54,6 +58,11 @@ def build_agent_graph(
             "policy_reason": result.reason,
             "approval_request_id": (
                 str(result.approval_request_id) if result.approval_request_id else None
+            ),
+            "approval_expires_at": (
+                result.approval_expires_at.isoformat()
+                if result.approval_expires_at is not None
+                else None
             ),
         }
 
@@ -83,6 +92,8 @@ def build_agent_graph(
                     "operation": action.get("operation"),
                     "resource": action.get("resource"),
                     "risk_level": action.get("risk_level"),
+                    "reason": state.get("policy_reason"),
+                    "expires_at": state.get("approval_expires_at"),
                 }
             )
         )
@@ -129,6 +140,10 @@ def build_agent_graph(
             action=ActionRequest.model_validate(raw_action),
             result=ToolExecutionResult.model_validate(raw_result),
             coordinator=coordinator,
+            history=tuple(
+                ConversationTurn.model_validate(item)
+                for item in state.get("conversation_history", [])
+            ),
         )
         return {
             "status": "completed" if verification.success else "failed",

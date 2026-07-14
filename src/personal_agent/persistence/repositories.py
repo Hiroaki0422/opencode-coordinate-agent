@@ -7,7 +7,7 @@ from datetime import datetime
 from typing import Any, Self
 from uuid import UUID, uuid4
 
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from personal_agent.core.types import ActionRequest, ApprovalGrant
@@ -16,12 +16,16 @@ from personal_agent.persistence.models import (
     ApprovalRequestModel,
     ApprovalRequestStatus,
     AuditEventModel,
+    ConversationMessageModel,
+    ConversationMessageRole,
     SessionModel,
     SessionStatus,
     WorkflowRunModel,
     WorkflowRunStatus,
     utc_now,
 )
+
+MAX_CONVERSATION_MESSAGE_CHARS = 50_000
 
 
 class MissingAuditEventError(RuntimeError):
@@ -248,6 +252,71 @@ class WorkflowRunRepository:
         return model
 
 
+class ConversationRepository:
+    def __init__(self, session: AsyncSession, tracker: _ChangeTracker) -> None:
+        self._session = session
+        self._tracker = tracker
+
+    async def create(
+        self,
+        *,
+        session_id: UUID,
+        run_id: UUID,
+        role: ConversationMessageRole,
+        content: str,
+        message_id: UUID | None = None,
+    ) -> ConversationMessageModel:
+        if not content.strip():
+            raise ValueError("conversation message content cannot be empty")
+        if len(content) > MAX_CONVERSATION_MESSAGE_CHARS:
+            raise ValueError(
+                "conversation message content exceeds "
+                f"{MAX_CONVERSATION_MESSAGE_CHARS} characters"
+            )
+        model = ConversationMessageModel(
+            id=str(message_id or uuid4()),
+            session_id=str(session_id),
+            run_id=str(run_id),
+            role=role.value,
+            content=content,
+            created_at=utc_now(),
+        )
+        self._session.add(model)
+        await self._session.flush()
+        self._tracker.state_changes += 1
+        return model
+
+    async def list_for_session(
+        self,
+        session_id: UUID,
+        *,
+        limit: int | None = None,
+    ) -> list[ConversationMessageModel]:
+        if limit is not None and limit <= 0:
+            raise ValueError("conversation message limit must be positive")
+        statement = (
+            select(ConversationMessageModel)
+            .where(ConversationMessageModel.session_id == str(session_id))
+            .order_by(ConversationMessageModel.sequence.desc())
+        )
+        if limit is not None:
+            statement = statement.limit(limit)
+        result = await self._session.execute(statement)
+        return list(reversed(result.scalars().all()))
+
+    async def delete_for_session(self, session_id: UUID) -> int:
+        messages = await self.list_for_session(session_id)
+        if not messages:
+            return 0
+        await self._session.execute(
+            delete(ConversationMessageModel).where(
+                ConversationMessageModel.session_id == str(session_id)
+            )
+        )
+        self._tracker.state_changes += 1
+        return len(messages)
+
+
 class AuditRepository:
     def __init__(self, session: AsyncSession, tracker: _ChangeTracker) -> None:
         self._session = session
@@ -288,6 +357,7 @@ class UnitOfWork:
         self.sessions = SessionRepository(self._session, self._tracker)
         self.approvals = ApprovalRepository(self._session, self._tracker)
         self.workflow_runs = WorkflowRunRepository(self._session, self._tracker)
+        self.conversations = ConversationRepository(self._session, self._tracker)
         self.audit = AuditRepository(self._session, self._tracker)
         self._committed = False
 

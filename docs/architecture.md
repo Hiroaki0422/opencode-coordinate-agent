@@ -33,13 +33,14 @@ approved host-local workspaces
 
 Run the same application on a Mac for local coding and files, or on a VPS for always-on access and Telegram. A Mac may use the CLI and local tools; a VPS may use SSH, an HTTP service, and Telegram. There is no dependency between the two deployments.
 
-SQLite stores sessions, approvals, tool/audit events, task metadata, and memory indexes for one installation. LangGraph uses a separate SQLite checkpoint file so interrupted runs can resume across process restarts. Move to PostgreSQL only when a single host needs concurrent processes or higher availability.
+SQLite stores sessions, conversation messages, approvals, workflow runs, and audit events for one installation. LangGraph uses a separate SQLite checkpoint file so interrupted runs can resume across process restarts. Move to PostgreSQL only when a single host needs concurrent processes or higher availability.
 
 ## Application layers
 
 | Layer | Responsibility | Package |
 | --- | --- | --- |
 | Transport | Normalize CLI, HTTP, and Telegram inputs; render replies and approval prompts. | `api`, `cli` |
+| Application runtime | Own shared dependency lifecycles and expose typed session, run, approval, and inspection operations to transports. | `application` |
 | Session | Authenticate the user and create or resume a bounded session. | `core`, `persistence` |
 | Policy | Convert requested effects into allow, deny, or approval-required decisions. | `policy` |
 | Orchestration | Maintain agent state, route work, checkpoint, pause, resume, and verify results. | `graph` |
@@ -156,6 +157,26 @@ count, response digest, and fallback selection without prompts or credentials. C
 configured mixed route; `personal-agent codex-health` performs an explicit version and login check
 without consuming model tokens.
 
+## P3.5.1 interactive conversation
+
+`personal-agent chat` keeps one application runtime open while accepting repeated terminal prompts.
+Every prompt still creates a separate durable workflow run and LangGraph checkpoint; the conversation
+session only groups those runs and supplies bounded context. Inline approvals display the run, tool,
+operation, resource, effect, risk, policy reason, and expiry, and accept only explicit approve or deny
+input before resuming the same checkpoint.
+
+SQLite stores user messages when a run is created and stores assistant messages only after a terminal
+response. Paused or cancelled runs therefore never become complete history turns. Before a new run,
+the runtime selects the newest complete user/assistant pairs within configured turn and character
+limits and serializes the same normalized history for API-backed and Codex subscription coordinators.
+History is labeled as untrusted context rather than system instructions. Configured credentials and
+authorization strings are redacted before message text or workflow summaries enter SQLite.
+
+`/history` renders local messages, `/clear` removes conversation messages while retaining workflow and
+append-only audit records, and `/new` creates a fresh permission and conversation session. This is
+short-term conversational continuity, not semantic retrieval: P5 RAG remains responsible for finding
+relevant information across documents or older knowledge by source.
+
 ## Model boundaries
 
 | Role | Provider | Authority |
@@ -188,14 +209,15 @@ An approval grant records the session, tool, operation, resource pattern, risk l
 
 ## Data model
 
-The initial SQLite schema will contain:
+The current application SQLite schema contains:
 
-- `sessions` and `conversation_events`
+- `sessions` and bounded `conversation_messages`
 - `approval_grants` and `approval_requests`
-- `workflow_runs` and `workflow_checkpoints`
-- `tool_calls` and append-only `audit_events`
-- `memory_documents`, `memory_chunks`, and `memory_retrievals`
-- `evaluation_cases` and `evaluation_runs`
+- `workflow_runs`
+- append-only `audit_events`
+
+LangGraph workflow checkpoints remain in the separately configured checkpoint SQLite database.
+Memory documents, chunks, retrieval records, and durable evaluation results remain future additions.
 
 Secrets do not belong in this database or git. Each host uses a permissions-restricted environment file or deployment secret store. Audit records redact tokens, authorization headers, and configured sensitive fields.
 

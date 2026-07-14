@@ -7,7 +7,12 @@ from io import StringIO
 from pydantic import SecretStr
 
 from personal_agent.core.config import LogFormat, OpenAISettings, Settings
-from personal_agent.observability.logging import REDACTED, SecretRedactor, configure_logging
+from personal_agent.observability.logging import (
+    REDACTED,
+    SecretRedactor,
+    configure_logging,
+    redact_sensitive_text,
+)
 
 
 def test_redactor_handles_nested_fields_exact_secrets_and_headers() -> None:
@@ -55,3 +60,18 @@ def test_json_logging_redacts_settings_secrets_and_standard_logs() -> None:
     assert "openai-secret" not in rendered
     assert "foreign-secret" not in rendered
     assert event["event"].count(REDACTED) == 2
+
+
+def test_sensitive_text_redaction_reuses_configured_logging_policy() -> None:
+    settings = Settings(
+        openai=OpenAISettings(enabled=True, api_key=SecretStr("persist-secret"))
+    )
+
+    redacted = redact_sensitive_text(
+        settings,
+        "persist-secret Authorization: Bearer header-secret",
+    )
+
+    assert "persist-secret" not in redacted
+    assert "header-secret" not in redacted
+    assert redacted.count(REDACTED) == 2

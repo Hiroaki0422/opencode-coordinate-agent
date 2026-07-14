@@ -32,18 +32,27 @@ class FakeCoordinator:
     def __init__(self, decision: CoordinatorDecision) -> None:
         self.decision = decision
         self.calls = 0
+        self.histories: list[Any] = []
 
-    async def decide(self, user_input: str) -> CoordinatorDecision:
+    async def decide(
+        self,
+        user_input: str,
+        *,
+        history: Any = (),
+    ) -> CoordinatorDecision:
         del user_input
         self.calls += 1
+        self.histories.append(history)
         return self.decision
 
     async def compose(
         self,
         user_input: str,
         evidence: list[dict[str, Any]],
+        *,
+        history: Any = (),
     ) -> GroundedResponse:
-        del user_input
+        del user_input, history
         return GroundedResponse(
             answer="Grounded answer",
             citations=[str(item["identifier"]) for item in evidence],
@@ -108,6 +117,36 @@ async def create_session(database: Database) -> str:
     return str(session_id)
 
 
+async def test_graph_passes_normalized_history_to_coordinator(
+    database: Database,
+    tmp_path: Path,
+) -> None:
+    coordinator = FakeCoordinator(CoordinatorDecision(message="Follow-up understood"))
+    state: AgentState = {
+        "session_id": await create_session(database),
+        "run_id": str(uuid4()),
+        "user_input": "Now add tests",
+        "conversation_history": [
+            {"user": "Update app.py", "assistant": "I updated app.py."}
+        ],
+    }
+
+    async with open_agent_graph(
+        checkpoint_path=tmp_path / "history-checkpoints.sqlite3",
+        coordinator=coordinator,
+        policy=PolicyService(database, PolicySettings()),
+    ) as graph:
+        result = await graph.ainvoke(
+            state,
+            config=cast(Any, {"configurable": {"thread_id": state["run_id"]}}),
+        )
+
+    assert result["response"] == "Follow-up understood"
+    assert [turn.model_dump() for turn in coordinator.histories[0]] == [
+        {"user": "Update app.py", "assistant": "I updated app.py."}
+    ]
+
+
 async def test_graph_resumes_approval_from_durable_checkpoint(
     database: Database,
     tmp_path: Path,
@@ -143,6 +182,8 @@ async def test_graph_resumes_approval_from_durable_checkpoint(
         initial = cast(dict[str, Any], initial_raw)
 
     assert "__interrupt__" in initial
+    approval = initial["__interrupt__"][0].value
+    assert approval["expires_at"]
     assert initial_coordinator.calls == 1
 
     resume_coordinator = FakeCoordinator(decision)

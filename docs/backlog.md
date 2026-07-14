@@ -119,6 +119,60 @@ implementing or copying OAuth tokens is intentionally out of scope for the initi
 - No OAuth credential or token value appears in logs, audit events, databases, checkpoints, or commands.
 - Offline tests pass without Codex credentials, and the optional authenticated smoke test is documented.
 
+## P3.5.1 — Interactive multi-turn CLI
+
+This phase adds a persistent terminal conversation while preserving the existing non-interactive JSON
+commands for scripts. A conversation session provides bounded context across turns, but it does not
+replace approval grants, LangGraph checkpoints, or future RAG-based long-term memory.
+
+- [x] Extract reusable agent runtime services from the Typer commands.
+  - Own database, coordinator, graph, policy, gateway, and verifier lifecycles outside the terminal UI.
+  - Expose typed operations to create or resume a session, submit a turn, inspect a run, and resume an
+    approval so CLI and later Telegram transports share the same orchestration path.
+- [x] Add durable conversation messages and repository methods.
+  - Store user and assistant messages with session ID, workflow run ID, role, timestamp, and a bounded
+    content field in SQLite.
+  - Commit messages only at defined lifecycle points and avoid persisting secrets, raw credentials,
+    unbounded command output, or internal model reasoning.
+- [x] Build bounded provider-neutral conversation context.
+  - Load the most recent complete turns within configurable turn and character limits.
+  - Pass the same normalized history to API-backed and Codex subscription coordinators without changing
+    deterministic policy or tool authority.
+  - Treat stored tool and research content as untrusted input and clearly separate it from system rules.
+- [x] Add the `personal-agent chat` REPL.
+  - Create a session when omitted, optionally resume an existing session, and keep runtime resources open
+    until the user exits.
+  - Accept repeated prompts, render concise human-readable responses, and keep `personal-agent run` JSON
+    output backward compatible.
+- [x] Handle approvals inside the interactive loop.
+  - Show the requested tool, operation, resource, effect, risk, reason, and expiry before asking the user.
+  - Accept explicit approve or deny input, resume the same durable workflow checkpoint, and never treat
+    ordinary chat text or an empty response as approval.
+- [x] Add interactive session commands and terminal behavior.
+  - Support `/help`, `/status`, `/session`, `/history`, `/clear`, `/new`, and `/quit`.
+  - Handle `Ctrl+C` as cancellation of the current input or operation and `Ctrl+D` as a clean exit without
+    corrupting the session or leaving child processes running.
+- [x] Add observability and redaction for conversation turns.
+  - Audit session, run, provider, duration, outcome, approval decisions, and bounded content digests while
+    excluding raw prompts, model responses, credentials, and sensitive tool output from logs.
+- [x] Add deterministic interactive CLI tests.
+  - Cover multi-turn references, history truncation, restart persistence, `/clear`, new sessions, inline
+    approval and denial, cancellation, provider fallback, failed tools, and duplicate-effect prevention.
+  - Test the REPL with mocked terminal input and coordinators so CI needs no network, Docker, provider
+    credentials, or ChatGPT subscription usage.
+- [x] Document interactive usage and recovery.
+  - Add setup examples, session-resume commands, approval behavior, history limits, local data location,
+    clearing history, and the distinction between conversation context and future RAG memory.
+
+### P3.5.1 acceptance criteria
+
+- `personal-agent chat` supports multiple turns in one bounded session and can resume that session later.
+- Follow-up requests can reference recent turns while context remains within configured size limits.
+- Interactive approvals use the existing policy and checkpoint path and cannot bypass explicit consent.
+- Conversation history remains local, bounded, redacted from logs, and independently clearable.
+- Existing non-interactive CLI commands and machine-readable JSON output remain backward compatible.
+- Offline tests cover terminal interaction, persistence, truncation, approvals, cancellation, and restart.
+
 ## P4 — Telegram and operational polish
 
 - [ ] Add Telegram long-polling authentication and user/chat allowlists.

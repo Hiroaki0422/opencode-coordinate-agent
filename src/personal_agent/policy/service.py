@@ -31,6 +31,7 @@ class PolicyResult(BaseModel):
     decision: PolicyDecision
     reason: str
     approval_request_id: UUID | None = None
+    approval_expires_at: datetime | None = None
 
 
 class ApprovalExpiredError(RuntimeError):
@@ -81,6 +82,7 @@ class PolicyService:
                     decision=PolicyDecision.REQUIRE_APPROVAL,
                     reason=f"approval request is {existing.status}",
                     approval_request_id=UUID(existing.id),
+                    approval_expires_at=self._request_expires_at(existing),
                 )
 
             request = await unit_of_work.approvals.create_request(
@@ -106,6 +108,7 @@ class PolicyService:
                 decision=PolicyDecision.REQUIRE_APPROVAL,
                 reason="this action requires human approval",
                 approval_request_id=request_id,
+                approval_expires_at=self._request_expires_at(request),
             )
 
     async def approve(self, request_id: UUID) -> ApprovalRequestModel:
@@ -215,10 +218,12 @@ class PolicyService:
         return None
 
     def _request_expired(self, request: ApprovalRequestModel, now: datetime) -> bool:
-        expires_at = _as_utc(request.created_at) + timedelta(
+        return self._request_expires_at(request) <= now
+
+    def _request_expires_at(self, request: ApprovalRequestModel) -> datetime:
+        return _as_utc(request.created_at) + timedelta(
             minutes=self._settings.approval_ttl_minutes
         )
-        return expires_at <= now
 
     @staticmethod
     def _grant_matches(grant: ApprovalGrantModel, action: ActionRequest) -> bool:

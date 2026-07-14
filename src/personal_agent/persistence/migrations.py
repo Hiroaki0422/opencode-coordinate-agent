@@ -35,8 +35,43 @@ async def _migration_001_initial_schema(connection: AsyncConnection) -> None:
     )
 
 
+async def _migration_002_conversation_messages(connection: AsyncConnection) -> None:
+    await connection.exec_driver_sql(
+        """
+        CREATE TABLE IF NOT EXISTS conversation_messages (
+            sequence INTEGER PRIMARY KEY AUTOINCREMENT,
+            id VARCHAR(36) NOT NULL UNIQUE,
+            session_id VARCHAR(36) NOT NULL,
+            run_id VARCHAR(36) NOT NULL,
+            role VARCHAR(20) NOT NULL,
+            content TEXT NOT NULL,
+            created_at DATETIME NOT NULL,
+            FOREIGN KEY(session_id) REFERENCES sessions (id) ON DELETE CASCADE,
+            FOREIGN KEY(run_id) REFERENCES workflow_runs (id) ON DELETE CASCADE
+        )
+        """
+    )
+    await connection.exec_driver_sql(
+        "CREATE INDEX IF NOT EXISTS ix_conversation_messages_session_id "
+        "ON conversation_messages (session_id)"
+    )
+    await connection.exec_driver_sql(
+        "CREATE INDEX IF NOT EXISTS ix_conversation_messages_run_id "
+        "ON conversation_messages (run_id)"
+    )
+    await connection.exec_driver_sql(
+        "CREATE INDEX IF NOT EXISTS ix_conversation_messages_role "
+        "ON conversation_messages (role)"
+    )
+    await connection.exec_driver_sql(
+        "CREATE INDEX IF NOT EXISTS ix_conversation_messages_created_at "
+        "ON conversation_messages (created_at)"
+    )
+
+
 MIGRATIONS: tuple[tuple[int, str, Migration], ...] = (
     (1, "initial persistence schema", _migration_001_initial_schema),
+    (2, "conversation message storage", _migration_002_conversation_messages),
 )
 
 

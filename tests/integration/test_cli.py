@@ -36,5 +36,13 @@ def test_cli_exposes_p0_commands() -> None:
     result = CliRunner().invoke(app, ["--help"])
 
     assert result.exit_code == 0
-    for command in ("session", "run", "approve", "deny", "inspect", "codex-health"):
+    for command in (
+        "session",
+        "run",
+        "chat",
+        "approve",
+        "deny",
+        "inspect",
+        "codex-health",
+    ):
         assert command in result.output

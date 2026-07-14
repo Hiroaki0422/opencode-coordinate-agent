@@ -39,6 +39,8 @@ def clear_agent_environment(monkeypatch: pytest.MonkeyPatch) -> None:
         "PERSONAL_AGENT_LOG_LEVEL",
         "PERSONAL_AGENT_LOG_FORMAT",
         "PERSONAL_AGENT_LOG_REDACTED_FIELDS",
+        "PERSONAL_AGENT_CONVERSATION__MAX_TURNS",
+        "PERSONAL_AGENT_CONVERSATION__MAX_CONTEXT_CHARS",
         "PERSONAL_AGENT_OPENAI__ENABLED",
         "PERSONAL_AGENT_OPENAI__API_KEY",
         "PERSONAL_AGENT_DEEPSEEK__ENABLED",
@@ -98,9 +100,23 @@ def test_defaults_leave_optional_integrations_disabled() -> None:
     assert settings.openai.enabled is False
     assert settings.todoist.enabled is False
     assert settings.telegram.enabled is False
+    assert settings.conversation.max_turns == 20
+    assert settings.conversation.max_context_chars == 40_000
     workspace_root = settings.local_execution.workspace_root
     assert workspace_root == workspace_root.expanduser()
     assert settings.local_execution.sandbox_backend is SandboxBackend.DOCKER
+
+
+def test_conversation_context_bounds_load_from_environment(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("PERSONAL_AGENT_CONVERSATION__MAX_TURNS", "8")
+    monkeypatch.setenv("PERSONAL_AGENT_CONVERSATION__MAX_CONTEXT_CHARS", "12000")
+
+    settings = SettingsWithoutDotEnv()
+
+    assert settings.conversation.max_turns == 8
+    assert settings.conversation.max_context_chars == 12_000
 
 
 @pytest.mark.parametrize(

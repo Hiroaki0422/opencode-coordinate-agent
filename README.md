@@ -2,7 +2,7 @@
 
 A privacy-conscious personal AI agent that runs independently on a single Mac or VPS.
 
-The first release provides a CLI foundation with provider-neutral model fallback, optional ChatGPT Codex subscription coordination, durable approval checkpoints, audited persistence, Todoist operations, source-based DuckDuckGo research, approval-gated Docker execution, and sandboxed OpenCode delegation. Telegram polling and retrieval-augmented memory follow in later phases.
+The first release provides an interactive multi-turn CLI, provider-neutral model fallback, optional ChatGPT Codex subscription coordination, durable approval checkpoints, audited persistence, Todoist operations, source-based DuckDuckGo research, approval-gated Docker execution, and sandboxed OpenCode delegation. Telegram polling and retrieval-augmented memory follow in later phases.
 
 ## Architecture
 
@@ -25,6 +25,7 @@ For laptop setup and an end-to-end CLI walkthrough, see [Run locally on a Mac](d
 
 ```text
 src/personal_agent/
+  application/  Transport-neutral runtime and conversation lifecycle
   api/          HTTP and Telegram adapters
   cli/          Local command-line interface
   core/         Shared contracts and domain types
@@ -53,4 +54,4 @@ uv run ruff check .
 
 Set only the integrations you intend to use. Startup validation requires credentials only for integrations whose `enabled` flag is `true`.
 
-P0 through P3.5 are complete. Build the sandbox image with `docker build -t personal-agent-sandbox:latest docker/sandbox`, configure either API-backed models or the optional Codex subscription coordinator, and enable local execution/OpenCode as needed. Start with `personal-agent session start`, submit work with `personal-agent run`, and resume paused writes or risky actions with `personal-agent approve` or `personal-agent deny`. Docker networking stays disabled except for individually approved actions such as a DeepSeek-backed OpenCode task.
+P0 through P3.5.1 are complete. Build the sandbox image with `docker build -t personal-agent-sandbox:latest docker/sandbox`, configure either API-backed models or the optional Codex subscription coordinator, and enable local execution/OpenCode as needed. Start an interactive conversation with `uv run personal-agent chat`, or use `personal-agent run` plus `personal-agent approve` or `personal-agent deny` for machine-readable automation. Docker networking stays disabled except for individually approved actions such as a DeepSeek-backed OpenCode task.

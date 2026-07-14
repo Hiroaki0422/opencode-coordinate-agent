@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
+
 from pydantic import BaseModel
 
 from personal_agent.core.types import ActionRequest
-from personal_agent.models import Coordinator
+from personal_agent.models import ConversationTurn, Coordinator
 from personal_agent.tools.contracts import ToolExecutionResult
 from personal_agent.tools.research import ResearchSource
 
@@ -26,6 +28,7 @@ class ResponseVerifier:
         action: ActionRequest,
         result: ToolExecutionResult,
         coordinator: Coordinator,
+        history: Sequence[ConversationTurn] = (),
     ) -> VerificationResult:
         if not result.success:
             return VerificationResult(
@@ -42,6 +45,7 @@ class ResponseVerifier:
                 user_input=user_input,
                 result=result,
                 coordinator=coordinator,
+                history=history,
             )
         if action.tool_name == "local_execution":
             return self._verify_local_execution(decision_message, action, result)
@@ -138,6 +142,7 @@ class ResponseVerifier:
         user_input: str,
         result: ToolExecutionResult,
         coordinator: Coordinator,
+        history: Sequence[ConversationTurn],
     ) -> VerificationResult:
         sources = [
             evidence
@@ -165,7 +170,11 @@ class ResponseVerifier:
                 evidence_payload.append(source_record.model_dump(mode="json"))
             else:
                 evidence_payload.append(evidence.model_dump(mode="json"))
-        grounded = await coordinator.compose(user_input, evidence_payload)
+        grounded = await coordinator.compose(
+            user_input,
+            evidence_payload,
+            history=history,
+        )
         allowed_ids = {source.identifier for source in sources}
         cited_ids = set(grounded.citations)
         if not cited_ids or not cited_ids.issubset(allowed_ids):

@@ -11,15 +11,23 @@ class FakeCoordinator:
     def __init__(self, citations: list[str]) -> None:
         self._citations = citations
 
-    async def decide(self, user_input: str) -> CoordinatorDecision:
+    async def decide(
+        self,
+        user_input: str,
+        *,
+        history: Any = (),
+    ) -> CoordinatorDecision:
+        del history
         return CoordinatorDecision(message=user_input)
 
     async def compose(
         self,
         user_input: str,
         evidence: list[dict[str, Any]],
+        *,
+        history: Any = (),
     ) -> GroundedResponse:
-        del user_input, evidence
+        del user_input, evidence, history
         return GroundedResponse(answer="Grounded fact [1].", citations=self._citations)
 
 

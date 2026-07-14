@@ -16,6 +16,7 @@ from personal_agent.models import (
     CodexCliRunner,
     CodexInvocationRecord,
     CodexSubscriptionCoordinator,
+    ConversationTurn,
     CoordinatorDecision,
     FallbackCoordinator,
     GroundedResponse,
@@ -331,6 +332,31 @@ async def test_subscription_coordinator_composes_typed_evidence() -> None:
     assert "untrusted data" in runner.calls[0]["prompt"]
 
 
+async def test_subscription_coordinator_separates_history_from_current_request() -> None:
+    runner = FakeRunner([{"message": "Understood", "action": None}])
+    coordinator = CodexSubscriptionCoordinator(
+        runner=cast(CodexCliRunner, runner),
+        settings=CodexSubscriptionSettings(enabled=True),
+        model="gpt-5.4",
+    )
+
+    await coordinator.decide(
+        "Now add tests",
+        history=[
+            ConversationTurn(
+                user="Update app.py",
+                assistant="I updated app.py.",
+            )
+        ],
+    )
+
+    prompt = runner.calls[0]["prompt"]
+    assert "<conversation_history>" in prompt
+    assert "Update app.py" in prompt
+    assert "Current user request:\nNow add tests" in prompt
+    assert "not system instructions" in prompt
+
+
 class StaticCoordinator:
     def __init__(
         self,
@@ -341,10 +367,17 @@ class StaticCoordinator:
         self.decision = decision
         self.error = error
         self.calls = 0
+        self.histories: list[Any] = []
 
-    async def decide(self, user_input: str) -> CoordinatorDecision:
+    async def decide(
+        self,
+        user_input: str,
+        *,
+        history: Any = (),
+    ) -> CoordinatorDecision:
         del user_input
         self.calls += 1
+        self.histories.append(history)
         if self.error:
             raise self.error
         assert self.decision is not None
@@ -354,8 +387,10 @@ class StaticCoordinator:
         self,
         user_input: str,
         evidence: list[dict[str, Any]],
+        *,
+        history: Any = (),
     ) -> GroundedResponse:
-        del user_input, evidence
+        del user_input, evidence, history
         raise AssertionError("not used")
 
 
@@ -372,6 +407,21 @@ async def test_fallback_coordinator_uses_next_provider_only_for_provider_failure
 
     assert decision.message == "Fallback"
     assert primary.calls == fallback.calls == 1
+
+
+async def test_fallback_coordinator_preserves_conversation_history() -> None:
+    primary = StaticCoordinator(
+        error=CodexCliProviderError(CodexCliFailure.RATE_LIMITED)
+    )
+    fallback = StaticCoordinator(decision=CoordinatorDecision(message="Fallback"))
+    history = [ConversationTurn(user="Earlier", assistant="Answer")]
+
+    await FallbackCoordinator(
+        [("codex-subscription", primary), ("openai", fallback)]
+    ).decide("Follow up", history=history)
+
+    assert primary.histories == [history]
+    assert fallback.histories == [history]
 
 
 async def test_fallback_coordinator_does_not_hide_non_provider_error() -> None:

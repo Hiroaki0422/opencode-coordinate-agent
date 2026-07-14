@@ -37,6 +37,9 @@ PERSONAL_AGENT_DEEPSEEK__API_KEY=your-deepseek-key
 PERSONAL_AGENT_COORDINATOR__ENABLED=true
 PERSONAL_AGENT_COORDINATOR__MODELS='[{"provider":"openai","model":"gpt-5-mini"}]'
 
+PERSONAL_AGENT_CONVERSATION__MAX_TURNS=20
+PERSONAL_AGENT_CONVERSATION__MAX_CONTEXT_CHARS=40000
+
 PERSONAL_AGENT_LOCAL_EXECUTION__ENABLED=true
 PERSONAL_AGENT_LOCAL_EXECUTION__WORKSPACE_ROOT=~/agent-workspaces
 PERSONAL_AGENT_OPENCODE__ENABLED=true
@@ -100,6 +103,47 @@ allowance. Run it only when desired:
 PERSONAL_AGENT_RUN_CODEX_SMOKE=true \
   uv run pytest tests/integration/test_codex_subscription_smoke.py -q
 ```
+
+## Start Interactive Chat
+
+Start a persistent terminal conversation:
+
+```bash
+uv run personal-agent chat
+```
+
+The command creates a bounded session and prints its ID. Every prompt creates a separate durable
+workflow run, but recent complete user/assistant turns are supplied to the next request. Resume the
+same conversation after restarting the process:
+
+```bash
+uv run personal-agent chat --session-id YOUR_SESSION_ID
+```
+
+Available commands are:
+
+- `/help` — show commands.
+- `/status` — show session expiry and the latest workflow run.
+- `/session` — print the current session ID.
+- `/history` — show locally stored conversation messages.
+- `/clear` — remove conversation messages while retaining workflow and append-only audit records.
+- `/new` — create and switch to a new conversation and permission session.
+- `/quit` — exit cleanly; `Ctrl+D` also exits and `Ctrl+C` cancels current input or work.
+
+When an action needs approval, the chat displays the paused run ID, tool, operation, resource, effect,
+risk, reason, and expiry. Enter `approve` or `deny`; empty or unrelated input never approves an action.
+If the process exits while a run is paused, recover through the existing durable commands:
+
+```bash
+uv run personal-agent inspect RUN_ID
+uv run personal-agent approve RUN_ID  # or: personal-agent deny RUN_ID
+```
+
+Conversation messages live in the application SQLite database configured by
+`PERSONAL_AGENT_DATABASE_URL`. Only the most recent complete turns fitting both conversation limits
+are sent to a model. Configured credentials and authorization strings are redacted before persistence,
+but avoid entering unrelated secrets into chat. This history provides short-term conversational
+continuity only; it is not document ingestion, semantic search, or RAG.
 
 ## Start a Session
 
