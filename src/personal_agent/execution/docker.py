@@ -169,6 +169,8 @@ class DockerSandbox:
             "--workdir",
             "/workspace",
         ]
+        if stdin is not None:
+            arguments.append("--interactive")
         for name in sorted(container_environment):
             arguments.extend(["--env", name])
         arguments.extend([self._settings.docker_image, *command])

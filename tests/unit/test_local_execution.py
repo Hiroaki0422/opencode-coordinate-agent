@@ -1,5 +1,6 @@
 """Tests for fail-closed, path-constrained Docker execution."""
 
+import hashlib
 from pathlib import Path
 from typing import cast
 
@@ -136,6 +137,32 @@ async def test_docker_runtime_enables_network_only_when_requested(tmp_path: Path
     docker_run = executor.calls[2][0]
     assert docker_run[docker_run.index("--network") + 1] == "bridge"
     assert f"type=bind,src={workspace.resolve()},dst=/workspace" in docker_run
+
+
+async def test_docker_runtime_keeps_container_stdin_open(tmp_path: Path) -> None:
+    workspace = tmp_path / "repo"
+    workspace.mkdir()
+    executor = FakeExecutor(
+        [
+            ProcessResult(exit_code=0, stdout=b"27", stderr=b""),
+            ProcessResult(exit_code=0, stdout=b"[]", stderr=b""),
+            ProcessResult(exit_code=0, stdout=b"", stderr=b""),
+        ]
+    )
+    sandbox = DockerSandbox(
+        settings(tmp_path),
+        executor=cast(CommandExecutor, executor),
+    )
+
+    await sandbox.run(
+        workspace=workspace,
+        command=["cat"],
+        writable=True,
+        stdin=b"hello",
+    )
+
+    assert "--interactive" in executor.calls[2][0]
+    assert executor.calls[2][1] == b"hello"
 
 
 async def test_docker_runtime_inherits_named_environment_without_argument_values(
@@ -281,3 +308,66 @@ async def test_local_tool_returns_command_audit_metadata(tmp_path: Path) -> None
     assert result.audit_data["exit_code"] == 0
     assert result.audit_data["stdout_digest"] == "stdout-hash"
     assert sandbox.calls[0]["network_enabled"] is True
+
+
+async def test_local_write_forwards_content_and_verifies_its_digest(tmp_path: Path) -> None:
+    workspace = tmp_path / "repo"
+    workspace.mkdir()
+    sandbox = FakeSandbox(
+        SandboxResult(
+            exit_code=0,
+            stdout="",
+            stderr="",
+            stdout_digest="stdout-hash",
+            stderr_digest="stderr-hash",
+            output_truncated=False,
+            network_enabled=False,
+        )
+    )
+    tool = LocalExecutionTool(
+        cast(DockerSandbox, sandbox),
+        WorkspaceService(tmp_path, cast(DockerSandbox, sandbox)),
+    )
+
+    result = await tool.execute(
+        ActionRequest(
+            tool_name="local_execution",
+            operation="write_file",
+            resource=str(workspace),
+            risk_level=RiskLevel.WRITE,
+            summary="Create test.txt",
+            arguments={"path": "test.txt", "content": "hello again"},
+        )
+    )
+
+    command = cast(list[str], sandbox.calls[0]["command"])
+    assert result.success is True
+    assert sandbox.calls[0]["stdin"] == b"hello again"
+    assert command[0:2] == ["python", "-c"]
+    assert command[-2] == "/workspace/test.txt"
+    assert command[-1] == hashlib.sha256(b"hello again").hexdigest()
+
+
+async def test_local_write_rejects_missing_content(tmp_path: Path) -> None:
+    workspace = tmp_path / "repo"
+    workspace.mkdir()
+    sandbox = FakeSandbox()
+    tool = LocalExecutionTool(
+        cast(DockerSandbox, sandbox),
+        WorkspaceService(tmp_path, cast(DockerSandbox, sandbox)),
+    )
+
+    result = await tool.execute(
+        ActionRequest(
+            tool_name="local_execution",
+            operation="write_file",
+            resource=str(workspace),
+            risk_level=RiskLevel.WRITE,
+            summary="Create test.txt",
+            arguments={"path": "test.txt"},
+        )
+    )
+
+    assert result.success is False
+    assert "content" in (result.error or "")
+    assert sandbox.calls == []

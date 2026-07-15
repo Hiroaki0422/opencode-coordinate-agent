@@ -25,6 +25,11 @@ class ShellArguments(BaseModel):
     network: bool = False
 
 
+class WriteFileArguments(BaseModel):
+    path: str = Field(min_length=1)
+    content: str
+
+
 class LocalExecutionTool:
     name = "local_execution"
 
@@ -95,17 +100,34 @@ class LocalExecutionTool:
             return self._result(action, result, command=command)
         if action.operation == "write_file":
             self._require_at_least_write(action)
-            relative_path = str(action.arguments.get("path", ""))
-            content = str(action.arguments.get("content", ""))
+            write = WriteFileArguments.model_validate(action.arguments)
             container_path = self._workspaces.container_path(
-                workspace, relative_path, writing=True
+                workspace, write.path, writing=True
             )
-            command = ["sh", "-c", 'cat > "$1"', "personal-agent", container_path]
+            content = write.content.encode()
+            content_digest = hashlib.sha256(content).hexdigest()
+            script = "\n".join(
+                [
+                    "import hashlib, os, pathlib, sys, tempfile",
+                    "target = pathlib.Path(sys.argv[1])",
+                    "data = sys.stdin.buffer.read()",
+                    "handle, name = tempfile.mkstemp(dir=target.parent)",
+                    "os.close(handle)",
+                    "temporary = pathlib.Path(name)",
+                    "temporary.write_bytes(data)",
+                    "actual = hashlib.sha256(temporary.read_bytes()).hexdigest()",
+                    "if actual != sys.argv[2]:",
+                    "    temporary.unlink()",
+                    "    raise SystemExit(1)",
+                    "os.replace(temporary, target)",
+                ]
+            )
+            command = ["python", "-c", script, container_path, content_digest]
             result = await self._sandbox.run(
                 workspace=workspace,
                 command=command,
                 writable=True,
-                stdin=content.encode(),
+                stdin=content,
             )
             return self._result(action, result, command=command)
         if action.operation == "run_command":

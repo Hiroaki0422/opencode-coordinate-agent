@@ -62,6 +62,8 @@ must identify focused tests and documentation updates before implementation begi
 - [x] `UT-002` — Reject an empty configured Telegram token and add opt-in INFO polling diagnostics.
 - [x] `UT-004` — Canonicalize accidental `adapter/operation` tool names before policy evaluation and
   explicitly require separate `tool_name` and `operation` fields in coordinator instructions.
+- [x] `UT-005` — Forward stdin with Docker interactive mode, require explicit file content, and verify
+  persisted bytes before reporting a local file write as successful.
 
 ## Deferred or rejected
 
