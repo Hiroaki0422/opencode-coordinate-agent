@@ -8,6 +8,7 @@ STATE_DIR="${STATE_DIR:-/var/lib/personal-agent}"
 ENV_FILE="${ENV_FILE:-/etc/personal-agent/personal-agent.env}"
 UNIT_FILE="${UNIT_FILE:-/etc/systemd/system/${SERVICE_NAME}}"
 SANDBOX_IMAGE="${SANDBOX_IMAGE:-personal-agent-sandbox:latest}"
+PYTHON_INSTALL_DIR="${PYTHON_INSTALL_DIR:-${APP_DIR}/.uv-python}"
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 REPOSITORY_ROOT="$(cd -- "${SCRIPT_DIR}/.." && pwd)"
 
@@ -29,6 +30,7 @@ require_absolute_path "$APP_DIR" "APP_DIR"
 require_absolute_path "$STATE_DIR" "STATE_DIR"
 require_absolute_path "$ENV_FILE" "ENV_FILE"
 require_absolute_path "$UNIT_FILE" "UNIT_FILE"
+require_absolute_path "$PYTHON_INSTALL_DIR" "PYTHON_INSTALL_DIR"
 [[ -f "${APP_DIR}/pyproject.toml" ]] || fail "clone the repository at ${APP_DIR} first"
 [[ "$(realpath -- "$REPOSITORY_ROOT")" == "$(realpath -- "$APP_DIR")" ]] || \
     fail "run ${APP_DIR}/deploy/install-systemd.sh from the deployment clone"
@@ -85,7 +87,13 @@ chown -R root:root "$APP_DIR"
 chmod 0755 "$APP_DIR"
 (
     cd -- "$APP_DIR"
-    "$UV_BIN" sync --frozen --no-dev
+    export UV_PYTHON_INSTALL_DIR="$PYTHON_INSTALL_DIR"
+    "$UV_BIN" venv --clear --managed-python --python 3.12 .venv
+    "$UV_BIN" sync \
+        --frozen \
+        --no-dev \
+        --managed-python \
+        --python "${APP_DIR}/.venv/bin/python"
     docker build --tag "$SANDBOX_IMAGE" docker/sandbox
 )
 

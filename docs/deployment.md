@@ -97,6 +97,9 @@ The installer:
 7. builds the Docker sandbox image; and
 8. reloads systemd without enabling or starting an unconfigured service.
 
+The installer keeps uv-managed Python below `/opt/personal-agent/.uv-python`. This is intentional:
+the hardened service cannot execute an interpreter installed below `/root` or `/home`.
+
 The installer refuses an application-local `.env`. Production configuration belongs only in the
 root-owned systemd environment file.
 
@@ -341,6 +344,19 @@ sudo journalctl -u personal-agent-telegram.service -n 200 --no-pager
 Common causes are an empty Telegram token, incorrect JSON in the environment file, unavailable model
 authentication, a Codex executable inaccessible to the service user, or Docker-group membership not
 yet applied.
+
+An exit status of `203/EXEC` with `Permission denied` can mean the virtual environment points to a
+uv-managed Python under `/root`, which `ProtectHome=true` blocks. Confirm with:
+
+```bash
+head -n 1 /opt/personal-agent/.venv/bin/personal-agent
+readlink -f /opt/personal-agent/.venv/bin/python
+findmnt -no TARGET,OPTIONS /opt
+```
+
+Pull the installer fix and rerun `./deploy/install-systemd.sh` to recreate `.venv` against the
+service-readable Python stored below `/opt/personal-agent/.uv-python`. If `/opt` itself is mounted
+with `noexec`, move the application to an executable filesystem rather than weakening the unit.
 
 ### Telegram receives no reply
 

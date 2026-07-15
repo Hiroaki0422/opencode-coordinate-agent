@@ -72,6 +72,8 @@ def test_installer_renders_every_systemd_placeholder() -> None:
     assert "ReadWritePaths=/var/lib/personal-agent" in rendered
     assert "/root/.local/bin/uv" in installer
     assert 'UV_BIN="${UV_BIN:-$(command -v uv || true)}"' in installer
+    assert 'UV_PYTHON_INSTALL_DIR="$PYTHON_INSTALL_DIR"' in installer
+    assert '"$UV_BIN" venv --clear --managed-python --python 3.12 .venv' in installer
 
 
 def test_backup_restore_and_upgrade_are_fail_closed() -> None:
