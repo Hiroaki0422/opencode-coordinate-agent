@@ -16,6 +16,7 @@ from personal_agent.core.config import Settings, get_settings
 from personal_agent.models import CodexCliRunner
 from personal_agent.observability import configure_logging
 from personal_agent.persistence import RecordNotFoundError
+from personal_agent.telegram import TelegramBot, TelegramBotClient
 
 app = typer.Typer(help="Permission-gated personal AI agent.", no_args_is_help=True)
 session_app = typer.Typer(help="Create and inspect bounded sessions.")
@@ -114,6 +115,32 @@ def chat(
         _run_async(execute())
     except KeyboardInterrupt:
         typer.echo("Current operation cancelled.")
+
+
+@app.command("telegram")
+def telegram() -> None:
+    """Run the authenticated Telegram long-polling transport."""
+
+    async def execute() -> None:
+        settings = _settings()
+        if not settings.telegram.enabled or settings.telegram.bot_token is None:
+            raise typer.BadParameter("telegram is not enabled")
+        async with TelegramBotClient(
+            bot_token=settings.telegram.bot_token.get_secret_value(),
+            base_url=settings.telegram.api_base_url,
+            request_timeout_seconds=settings.telegram.request_timeout_seconds,
+        ) as client:
+            async with open_agent_runtime(settings, actor="telegram") as runtime:
+                await TelegramBot(
+                    settings=settings.telegram,
+                    runtime=runtime,
+                    client=client,
+                ).run()
+
+    try:
+        _run_async(execute())
+    except KeyboardInterrupt:
+        typer.echo("Telegram polling stopped.")
 
 
 async def _resume_run(run_id: UUID, *, approved: bool) -> str:

@@ -38,6 +38,7 @@ async def test_migrations_are_idempotent(database: Database) -> None:
     assert applied_migrations == [
         (1, "initial persistence schema"),
         (2, "conversation message storage"),
+        (3, "telegram transport state"),
     ]
 
 

@@ -129,6 +129,43 @@ class ConversationMessageModel(Base):
     )
 
 
+class TelegramConversationModel(Base):
+    __tablename__ = "telegram_conversations"
+
+    chat_id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    session_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("sessions.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class TelegramActionTokenModel(Base):
+    __tablename__ = "telegram_action_tokens"
+
+    token_digest: Mapped[str] = mapped_column(String(64), primary_key=True)
+    session_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("sessions.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    run_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("workflow_runs.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    chat_id: Mapped[int] = mapped_column(Integer, nullable=False, index=True)
+    user_id: Mapped[int] = mapped_column(Integer, nullable=False, index=True)
+    expires_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, index=True
+    )
+    consumed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    decision: Mapped[str | None] = mapped_column(String(20))
+
+
+class TelegramUpdateModel(Base):
+    __tablename__ = "telegram_updates"
+
+    update_id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    claimed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
 class AuditEventModel(Base):
     __tablename__ = "audit_events"
 

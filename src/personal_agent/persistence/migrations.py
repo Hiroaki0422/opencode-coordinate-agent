@@ -69,9 +69,58 @@ async def _migration_002_conversation_messages(connection: AsyncConnection) -> N
     )
 
 
+async def _migration_003_telegram_transport(connection: AsyncConnection) -> None:
+    await connection.exec_driver_sql(
+        """
+        CREATE TABLE IF NOT EXISTS telegram_conversations (
+            chat_id INTEGER NOT NULL,
+            user_id INTEGER NOT NULL,
+            session_id VARCHAR(36) NOT NULL,
+            updated_at DATETIME NOT NULL,
+            PRIMARY KEY (chat_id, user_id),
+            FOREIGN KEY(session_id) REFERENCES sessions (id) ON DELETE CASCADE
+        )
+        """
+    )
+    await connection.exec_driver_sql(
+        "CREATE INDEX IF NOT EXISTS ix_telegram_conversations_session_id "
+        "ON telegram_conversations (session_id)"
+    )
+    await connection.exec_driver_sql(
+        """
+        CREATE TABLE IF NOT EXISTS telegram_action_tokens (
+            token_digest VARCHAR(64) PRIMARY KEY,
+            session_id VARCHAR(36) NOT NULL,
+            run_id VARCHAR(36) NOT NULL,
+            chat_id INTEGER NOT NULL,
+            user_id INTEGER NOT NULL,
+            expires_at DATETIME NOT NULL,
+            consumed_at DATETIME,
+            decision VARCHAR(20),
+            FOREIGN KEY(session_id) REFERENCES sessions (id) ON DELETE CASCADE,
+            FOREIGN KEY(run_id) REFERENCES workflow_runs (id) ON DELETE CASCADE
+        )
+        """
+    )
+    for column in ("session_id", "run_id", "chat_id", "user_id", "expires_at"):
+        await connection.exec_driver_sql(
+            f"CREATE INDEX IF NOT EXISTS ix_telegram_action_tokens_{column} "
+            f"ON telegram_action_tokens ({column})"
+        )
+    await connection.exec_driver_sql(
+        """
+        CREATE TABLE IF NOT EXISTS telegram_updates (
+            update_id INTEGER PRIMARY KEY,
+            claimed_at DATETIME NOT NULL
+        )
+        """
+    )
+
+
 MIGRATIONS: tuple[tuple[int, str, Migration], ...] = (
     (1, "initial persistence schema", _migration_001_initial_schema),
     (2, "conversation message storage", _migration_002_conversation_messages),
+    (3, "telegram transport state", _migration_003_telegram_transport),
 )
 
 

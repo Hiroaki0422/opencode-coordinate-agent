@@ -7,7 +7,7 @@ from datetime import datetime
 from typing import Any, Self
 from uuid import UUID, uuid4
 
-from sqlalchemy import delete, select
+from sqlalchemy import delete, select, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from personal_agent.core.types import ActionRequest, ApprovalGrant
@@ -20,6 +20,9 @@ from personal_agent.persistence.models import (
     ConversationMessageRole,
     SessionModel,
     SessionStatus,
+    TelegramActionTokenModel,
+    TelegramConversationModel,
+    TelegramUpdateModel,
     WorkflowRunModel,
     WorkflowRunStatus,
     utc_now,
@@ -317,6 +320,102 @@ class ConversationRepository:
         return len(messages)
 
 
+class TelegramRepository:
+    def __init__(self, session: AsyncSession, tracker: _ChangeTracker) -> None:
+        self._session = session
+        self._tracker = tracker
+
+    async def claim_update(self, update_id: int) -> bool:
+        if await self._session.get(TelegramUpdateModel, update_id) is not None:
+            return False
+        self._session.add(TelegramUpdateModel(update_id=update_id, claimed_at=utc_now()))
+        await self._session.flush()
+        self._tracker.state_changes += 1
+        return True
+
+    async def get_conversation(
+        self,
+        *,
+        chat_id: int,
+        user_id: int,
+    ) -> TelegramConversationModel | None:
+        return await self._session.get(TelegramConversationModel, (chat_id, user_id))
+
+    async def bind_conversation(
+        self,
+        *,
+        chat_id: int,
+        user_id: int,
+        session_id: UUID,
+    ) -> TelegramConversationModel:
+        model = await self.get_conversation(chat_id=chat_id, user_id=user_id)
+        if model is None:
+            model = TelegramConversationModel(
+                chat_id=chat_id,
+                user_id=user_id,
+                session_id=str(session_id),
+                updated_at=utc_now(),
+            )
+            self._session.add(model)
+            await self._session.flush()
+        else:
+            model.session_id = str(session_id)
+            model.updated_at = utc_now()
+        self._tracker.state_changes += 1
+        return model
+
+    async def create_action_token(
+        self,
+        *,
+        token_digest: str,
+        session_id: UUID,
+        run_id: UUID,
+        chat_id: int,
+        user_id: int,
+        expires_at: datetime,
+    ) -> TelegramActionTokenModel:
+        model = TelegramActionTokenModel(
+            token_digest=token_digest,
+            session_id=str(session_id),
+            run_id=str(run_id),
+            chat_id=chat_id,
+            user_id=user_id,
+            expires_at=expires_at,
+            consumed_at=None,
+            decision=None,
+        )
+        self._session.add(model)
+        await self._session.flush()
+        self._tracker.state_changes += 1
+        return model
+
+    async def get_action_token(
+        self,
+        token_digest: str,
+    ) -> TelegramActionTokenModel | None:
+        return await self._session.get(TelegramActionTokenModel, token_digest)
+
+    async def consume_action_token(
+        self,
+        token_digest: str,
+        *,
+        decision: str,
+    ) -> bool:
+        result = await self._session.execute(
+            update(TelegramActionTokenModel)
+            .where(
+                TelegramActionTokenModel.token_digest == token_digest,
+                TelegramActionTokenModel.consumed_at.is_(None),
+            )
+            .values(consumed_at=utc_now(), decision=decision)
+            .returning(TelegramActionTokenModel.token_digest)
+        )
+        if result.scalar_one_or_none() is None:
+            return False
+        self._tracker.state_changes += 1
+        return True
+
+
 class AuditRepository:
     def __init__(self, session: AsyncSession, tracker: _ChangeTracker) -> None:
         self._session = session
@@ -358,6 +457,7 @@ class UnitOfWork:
         self.approvals = ApprovalRepository(self._session, self._tracker)
         self.workflow_runs = WorkflowRunRepository(self._session, self._tracker)
         self.conversations = ConversationRepository(self._session, self._tracker)
+        self.telegram = TelegramRepository(self._session, self._tracker)
         self.audit = AuditRepository(self._session, self._tracker)
         self._committed = False
 

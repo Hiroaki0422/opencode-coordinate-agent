@@ -89,6 +89,12 @@ class TelegramSettings(BaseModel):
     enabled: bool = False
     bot_token: SecretStr | None = None
     allowed_chat_ids: list[int] = Field(default_factory=list)
+    allowed_user_ids: list[int] = Field(default_factory=list)
+    api_base_url: str = "https://api.telegram.org"
+    poll_timeout_seconds: int = Field(default=30, ge=1, le=50)
+    request_timeout_seconds: float = Field(default=45.0, gt=0)
+    retry_delay_seconds: float = Field(default=3.0, ge=0.1)
+    max_message_chars: int = Field(default=4000, ge=500, le=4096)
 
 
 class PolicySettings(BaseModel):
@@ -184,7 +190,7 @@ class Settings(BaseSettings):
     data_dir: Path = Path("data")
     checkpoint_path: Path = Path("data/checkpoints.sqlite3")
     policy_path: Path = Path("config/policy.yaml")
-    log_level: str = "INFO"
+    log_level: str = "WARNING"
     log_format: LogFormat = LogFormat.CONSOLE
     log_redacted_fields: set[str] = Field(default_factory=set)
     openai: OpenAISettings = Field(default_factory=OpenAISettings)
@@ -251,6 +257,10 @@ class Settings(BaseSettings):
             if not self.telegram.allowed_chat_ids:
                 raise ValueError(
                     "telegram.allowed_chat_ids is required when telegram.enabled is true"
+                )
+            if not self.telegram.allowed_user_ids:
+                raise ValueError(
+                    "telegram.allowed_user_ids is required when telegram.enabled is true"
                 )
         if self.opencode.enabled:
             if not self.local_execution.enabled:

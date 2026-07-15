@@ -13,3 +13,4 @@ data/
 logs/
 coverage.xml
 htmlcov/
+docs/vps-install.md

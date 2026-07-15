@@ -63,6 +63,7 @@ def clear_agent_environment(monkeypatch: pytest.MonkeyPatch) -> None:
         "PERSONAL_AGENT_TELEGRAM__ENABLED",
         "PERSONAL_AGENT_TELEGRAM__BOT_TOKEN",
         "PERSONAL_AGENT_TELEGRAM__ALLOWED_CHAT_IDS",
+        "PERSONAL_AGENT_TELEGRAM__ALLOWED_USER_IDS",
         "PERSONAL_AGENT_LOCAL_EXECUTION__ENABLED",
         "PERSONAL_AGENT_LOCAL_EXECUTION__WORKSPACE_ROOT",
         "PERSONAL_AGENT_LOCAL_EXECUTION__SANDBOX_BACKEND",
@@ -97,6 +98,7 @@ def test_defaults_leave_optional_integrations_disabled() -> None:
     settings = SettingsWithoutDotEnv()
 
     assert settings.environment is Environment.DEVELOPMENT
+    assert settings.log_level == "WARNING"
     assert settings.openai.enabled is False
     assert settings.todoist.enabled is False
     assert settings.telegram.enabled is False
@@ -148,13 +150,17 @@ def test_enabled_integrations_require_their_secret(
         SettingsWithoutDotEnv()
 
 
-def test_telegram_requires_a_token_and_allowlisted_chat(
+def test_telegram_requires_a_token_and_allowlisted_identities(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setenv("PERSONAL_AGENT_TELEGRAM__ENABLED", "true")
     monkeypatch.setenv("PERSONAL_AGENT_TELEGRAM__BOT_TOKEN", "telegram-secret")
 
     with pytest.raises(ValidationError, match="telegram.allowed_chat_ids"):
+        SettingsWithoutDotEnv()
+
+    monkeypatch.setenv("PERSONAL_AGENT_TELEGRAM__ALLOWED_CHAT_IDS", "[123456]")
+    with pytest.raises(ValidationError, match="telegram.allowed_user_ids"):
         SettingsWithoutDotEnv()
 
 
@@ -169,6 +175,7 @@ def test_enabled_integrations_load_from_nested_environment_variables(
     monkeypatch.setenv("PERSONAL_AGENT_TELEGRAM__ENABLED", "true")
     monkeypatch.setenv("PERSONAL_AGENT_TELEGRAM__BOT_TOKEN", "telegram-secret")
     monkeypatch.setenv("PERSONAL_AGENT_TELEGRAM__ALLOWED_CHAT_IDS", "[123456]")
+    monkeypatch.setenv("PERSONAL_AGENT_TELEGRAM__ALLOWED_USER_IDS", "[654321]")
     monkeypatch.setenv("PERSONAL_AGENT_LOCAL_EXECUTION__ENABLED", "true")
     monkeypatch.setenv("PERSONAL_AGENT_LOCAL_EXECUTION__WORKSPACE_ROOT", "~/agent-workspaces")
 
@@ -180,6 +187,7 @@ def test_enabled_integrations_load_from_nested_environment_variables(
     assert settings.todoist.api_token is not None
     assert settings.todoist.api_token.get_secret_value() == "todoist-secret"
     assert settings.telegram.allowed_chat_ids == [123456]
+    assert settings.telegram.allowed_user_ids == [654321]
     assert settings.local_execution.enabled is True
     assert settings.local_execution.workspace_root.name == "agent-workspaces"
     assert settings.local_execution.sandbox_backend is SandboxBackend.DOCKER

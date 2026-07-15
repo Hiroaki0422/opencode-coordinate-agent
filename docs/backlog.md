@@ -175,9 +175,9 @@ replace approval grants, LangGraph checkpoints, or future RAG-based long-term me
 
 ## P4 — Telegram and operational polish
 
-- [ ] Add Telegram long-polling authentication and user/chat allowlists.
+- [x] Add Telegram long-polling authentication and user/chat allowlists.
   - Rejects messages outside the configured account and routes approvals through one-time action tokens.
-- [ ] Render approvals and local-execution progress for Telegram.
+- [x] Render approvals and local-execution progress for Telegram.
   - Shows the tool, resource, effect, reason, expiry, and approve/deny controls.
 - [ ] Add single-host deployment assets.
   - Documents system-service setup, backup, recovery, upgrade, and secret rotation.

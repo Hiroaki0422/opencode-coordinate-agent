@@ -14,6 +14,7 @@ from uuid import UUID, uuid4
 
 from langgraph.types import Command
 
+from personal_agent.application.telegram import TelegramStateService
 from personal_agent.core.config import Settings
 from personal_agent.execution import (
     DockerSandbox,
@@ -123,6 +124,11 @@ class AgentRuntime:
         self._graph = graph
         self._actor = actor
         self._logger = get_logger(__name__)
+        self.telegram = TelegramStateService(
+            database=database,
+            create_session=self.create_session,
+            actor=actor,
+        )
 
     async def create_session(self) -> UUID:
         session_id = uuid4()

@@ -145,6 +145,64 @@ are sent to a model. Configured credentials and authorization strings are redact
 but avoid entering unrelated secrets into chat. This history provides short-term conversational
 continuity only; it is not document ingestion, semantic search, or RAG.
 
+## Optional: Run the Telegram Bot
+
+Create a bot with [BotFather](https://core.telegram.org/bots/features#botfather), keep its token out of
+Git, and send the new bot a `/start` message. Retrieve the pending update to find both identity values:
+
+```bash
+read -rs TELEGRAM_BOT_TOKEN
+echo
+curl --silent --request POST \
+  "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/getUpdates" | python3 -m json.tool
+unset TELEGRAM_BOT_TOKEN
+```
+
+In the returned `message`, use `chat.id` as the allowed chat ID and `from.id` as the allowed user ID.
+They are often equal in a private chat, but configure and verify both. Add the values to `.env`:
+
+```dotenv
+PERSONAL_AGENT_TELEGRAM__ENABLED=true
+PERSONAL_AGENT_TELEGRAM__BOT_TOKEN=your-bot-token
+PERSONAL_AGENT_TELEGRAM__ALLOWED_CHAT_IDS='[123456789]'
+PERSONAL_AGENT_TELEGRAM__ALLOWED_USER_IDS='[123456789]'
+```
+
+Start the long-polling process:
+
+```bash
+uv run personal-agent telegram
+```
+
+Only updates matching both allowlists are accepted. `/help`, `/status`, `/session`, `/history`,
+`/clear`, and `/new` mirror the interactive CLI commands. Ordinary messages reuse one durable SQLite
+conversation session. The bot shows `Planning…` while the workflow runs and replaces it with the final
+response or an approval card containing the tool, operation, resource, effect, risk, reason, and
+expiry.
+
+Approve or deny using the inline buttons. Each callback contains a short opaque token; SQLite stores
+only its SHA-256 digest, binds it to the exact chat, user, session, and run, and accepts it once before
+resuming the LangGraph checkpoint. Expired, reused, wrong-user, and wrong-chat callbacks fail closed.
+If a consumed approval cannot resume, the bot includes the run ID so it can be inspected through the
+CLI.
+
+Run only one polling process for a bot token. Startup removes any configured webhook because Telegram
+does not deliver `getUpdates` while a webhook is active. Stop polling with `Ctrl+C`. To disable mobile
+access, stop the process, set `PERSONAL_AGENT_TELEGRAM__ENABLED=false`, and rotate or revoke the bot
+token through BotFather when appropriate.
+
+Test the integration without contacting Telegram:
+
+```bash
+uv run pytest -q \
+  tests/unit/test_telegram_client.py \
+  tests/unit/test_telegram_bot.py \
+  tests/integration/test_telegram_state.py
+```
+
+For a live smoke test, send `/help`, ask a read-only question, then request a local write or coding task
+and confirm that its inline approval describes the exact intended effect before selecting a decision.
+
 ## Start a Session
 
 ```bash

@@ -2,7 +2,7 @@
 
 ## Purpose
 
-V1 is a permission-gated personal AI agent that runs as one independent installation on either a Mac or a VPS. Each installation owns its own state, local workspace, tools, and credentials. It supports an ordered, provider-neutral model route for planning and synthesis, DeepSeek through OpenCode for coding work, CLI and later Telegram entry points, Todoist tasks, web research, and approval-gated local actions.
+V1 is a permission-gated personal AI agent that runs as one independent installation on either a Mac or a VPS. Each installation owns its own state, local workspace, tools, and credentials. It supports an ordered, provider-neutral model route for planning and synthesis, DeepSeek through OpenCode for coding work, CLI and Telegram entry points, Todoist tasks, web research, and approval-gated local actions.
 
 V1 deliberately does not synchronize sessions, files, approvals, or jobs between hosts. Cross-host coordination is a v2 concern.
 
@@ -39,7 +39,7 @@ SQLite stores sessions, conversation messages, approvals, workflow runs, and aud
 
 | Layer | Responsibility | Package |
 | --- | --- | --- |
-| Transport | Normalize CLI, HTTP, and Telegram inputs; render replies and approval prompts. | `api`, `cli` |
+| Transport | Normalize CLI and Telegram inputs; render replies and approval prompts. | `cli`, `telegram` |
 | Application runtime | Own shared dependency lifecycles and expose typed session, run, approval, and inspection operations to transports. | `application` |
 | Session | Authenticate the user and create or resume a bounded session. | `core`, `persistence` |
 | Policy | Convert requested effects into allow, deny, or approval-required decisions. | `policy` |
@@ -177,6 +177,27 @@ append-only audit records, and `/new` creates a fresh permission and conversatio
 short-term conversational continuity, not semantic retrieval: P5 RAG remains responsible for finding
 relevant information across documents or older knowledge by source.
 
+## P4 Telegram transport
+
+`personal-agent telegram` runs one asynchronous Bot API long-polling loop on either host. A small
+`httpx` client disables webhooks at startup, requests only message and callback-query updates, uses a
+positive long-poll timeout, and advances the update offset. Telegram HTTP failures are sanitized so
+the bot token and provider response body do not enter application errors. Transient polling failures
+back off and retry; the process exits cleanly on cancellation.
+
+Authentication requires an exact match in both configured chat and user allowlists. Rejected identity
+metadata is audited without forwarding message text to the model. Accepted `(chat_id, user_id)` pairs
+map to one durable application session, so conversation history and permission expiry behave the same
+as the CLI across process restarts. Claimed update IDs are stored before processing to prevent replay.
+
+The transport uses the shared `AgentRuntime`; it has no independent model, policy, or tool path. It
+renders planning progress, bounded final messages, session commands, and approval cards. Approval
+buttons carry an opaque callback token below Telegram's 64-byte limit. Only a SHA-256 token digest is
+stored, together with its chat, user, session, run, and expiry. Consumption is an atomic one-time state
+change before the existing LangGraph `resume` operation, so duplicated, expired, or cross-identity
+callbacks cannot authorize an effect. A post-consumption resume failure reports the durable run ID for
+CLI recovery rather than minting a second authorization.
+
 ## Model boundaries
 
 | Role | Provider | Authority |
@@ -214,6 +235,7 @@ The current application SQLite schema contains:
 - `sessions` and bounded `conversation_messages`
 - `approval_grants` and `approval_requests`
 - `workflow_runs`
+- `telegram_conversations`, `telegram_action_tokens`, and claimed `telegram_updates`
 - append-only `audit_events`
 
 LangGraph workflow checkpoints remain in the separately configured checkpoint SQLite database.

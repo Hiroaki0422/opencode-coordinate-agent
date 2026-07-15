@@ -2,7 +2,7 @@
 
 A privacy-conscious personal AI agent that runs independently on a single Mac or VPS.
 
-The first release provides an interactive multi-turn CLI, provider-neutral model fallback, optional ChatGPT Codex subscription coordination, durable approval checkpoints, audited persistence, Todoist operations, source-based DuckDuckGo research, approval-gated Docker execution, and sandboxed OpenCode delegation. Telegram polling and retrieval-augmented memory follow in later phases.
+The first release provides interactive CLI and Telegram conversations, provider-neutral model fallback, optional ChatGPT Codex subscription coordination, durable approval checkpoints, audited persistence, Todoist operations, source-based DuckDuckGo research, approval-gated Docker execution, and sandboxed OpenCode delegation. Retrieval-augmented memory follows in a later phase.
 
 ## Architecture
 
@@ -19,14 +19,14 @@ Each installation owns its own sessions, policy, orchestration, audit records, a
 
 See [the architecture](docs/architecture.md), [the implementation backlog](docs/backlog.md), and [the first architecture decision](docs/decisions/0001-single-host-v1.md).
 
-For laptop setup and an end-to-end CLI walkthrough, see [Run locally on a Mac](docs/getting-started.md).
+For laptop setup, CLI usage, and Telegram configuration, see [Run locally on a Mac](docs/getting-started.md).
 
 ## Repository layout
 
 ```text
 src/personal_agent/
   application/  Transport-neutral runtime and conversation lifecycle
-  api/          HTTP and Telegram adapters
+  api/          Future HTTP adapters
   cli/          Local command-line interface
   core/         Shared contracts and domain types
   graph/        LangGraph state and nodes
@@ -36,6 +36,7 @@ src/personal_agent/
   policy/       Approval and capability enforcement
   tools/        Audited tool adapters
   execution/    Host-local shell, workspace, and OpenCode execution
+  telegram/     Authenticated Bot API polling and approval UI
 docs/           Architecture, decisions, and backlog
 config/         Checked-in example configuration only
 tests/          Unit, integration, and evaluation fixtures
@@ -54,4 +55,4 @@ uv run ruff check .
 
 Set only the integrations you intend to use. Startup validation requires credentials only for integrations whose `enabled` flag is `true`.
 
-P0 through P3.5.1 are complete. Build the sandbox image with `docker build -t personal-agent-sandbox:latest docker/sandbox`, configure either API-backed models or the optional Codex subscription coordinator, and enable local execution/OpenCode as needed. Start an interactive conversation with `uv run personal-agent chat`, or use `personal-agent run` plus `personal-agent approve` or `personal-agent deny` for machine-readable automation. Docker networking stays disabled except for individually approved actions such as a DeepSeek-backed OpenCode task.
+P0 through the Telegram integration in P4 are complete. Build the sandbox image with `docker build -t personal-agent-sandbox:latest docker/sandbox`, configure either API-backed models or the optional Codex subscription coordinator, and enable local execution/OpenCode as needed. Start an interactive conversation with `uv run personal-agent chat`, run mobile polling with `uv run personal-agent telegram`, or use `personal-agent run` plus `personal-agent approve` or `personal-agent deny` for machine-readable automation. Docker networking stays disabled except for individually approved actions such as a DeepSeek-backed OpenCode task.
