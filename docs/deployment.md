@@ -39,7 +39,15 @@ address-family, and privilege hardening.
 
 ## Prerequisites
 
-Install Docker, Git, `uv`, and optionally a globally accessible Codex CLI. Confirm:
+Install Docker, Git, `uv`, and optionally a globally accessible Codex CLI. The uv standalone
+installer defaults to the current user's `~/.local/bin`, which may be omitted from sudo's restricted
+`PATH`. For predictable administrator and upgrade behavior, install uv system-wide:
+
+```bash
+curl -LsSf https://astral.sh/uv/install.sh | sudo env UV_INSTALL_DIR=/usr/local/bin sh
+```
+
+Confirm:
 
 ```bash
 systemctl is-active docker
@@ -69,6 +77,13 @@ directories:
 sudo git clone YOUR_REPOSITORY_URL /opt/personal-agent
 cd /opt/personal-agent
 sudo ./deploy/install-systemd.sh
+```
+
+If the prompt already shows a root shell and uv was installed at `/root/.local/bin/uv`, either omit
+the redundant `sudo` or rely on the installer's root-local fallback:
+
+```bash
+./deploy/install-systemd.sh
 ```
 
 The installer:
@@ -116,14 +131,46 @@ PERSONAL_AGENT_COORDINATOR__ENABLED=true
 PERSONAL_AGENT_COORDINATOR__MODELS='[{"provider":"codex-subscription","model":"gpt-5.4"}]'
 ```
 
-Authenticate as the service user so the active IDE, root account, and service never race on one OAuth
-directory:
+Authentication owned by `root` in its default Codex home does not authenticate the isolated service
+account. First locate the installed executable:
+
+```bash
+command -v codex
+readlink -f "$(command -v codex)"
+```
+
+The configured executable must be reachable outside `/root` and `/home` because the systemd unit
+protects those directories. Install or expose Codex at a system path such as `/usr/local/bin/codex`,
+then set `PERSONAL_AGENT_CODEX_SUBSCRIPTION__EXECUTABLE` to that exact path.
+
+Alternatively, install the official standalone CLI into the service user's state directory and set
+the executable to `/var/lib/personal-agent/.local/bin/codex`:
+
+```bash
+sudo -u personal-agent env HOME=/var/lib/personal-agent \
+  sh -c 'curl -fsSL https://chatgpt.com/codex/install.sh | sh'
+```
+
+Check the isolated authentication state before starting a new device login:
 
 ```bash
 sudo -u personal-agent env \
   HOME=/var/lib/personal-agent \
   CODEX_HOME=/var/lib/personal-agent/codex-auth \
-  /usr/local/bin/codex login --device-auth
+  /var/lib/personal-agent/.local/bin/codex login status
+```
+
+If that command succeeds, skip device authentication. A successful login under `/root/.codex` or
+another administrator-owned `CODEX_HOME` does not apply to this service account.
+
+Authenticate as the service user so the active administrator account and service never share or race
+on one OAuth directory:
+
+```bash
+sudo -u personal-agent env \
+  HOME=/var/lib/personal-agent \
+  CODEX_HOME=/var/lib/personal-agent/codex-auth \
+  /var/lib/personal-agent/.local/bin/codex login --device-auth
 ```
 
 For API-backed providers, enable the provider, place its key in the environment file, and configure

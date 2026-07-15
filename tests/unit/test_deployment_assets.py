@@ -32,6 +32,7 @@ def test_systemd_template_runs_one_hardened_telegram_process() -> None:
     assert "EnvironmentFile=@ENV_FILE@" in unit
     assert "User=@SERVICE_USER@" in unit
     assert "SupplementaryGroups=docker" in unit
+    assert "test -r @ENV_FILE@" not in unit
     assert "Restart=on-failure" in unit
     assert "KillSignal=SIGINT" in unit
     assert "NoNewPrivileges=true" in unit
@@ -58,6 +59,7 @@ def test_production_environment_uses_absolute_state_paths_and_no_secret() -> Non
 
 def test_installer_renders_every_systemd_placeholder() -> None:
     template = (SYSTEMD_DIRECTORY / "personal-agent-telegram.service.in").read_text()
+    installer = (DEPLOY_DIRECTORY / "install-systemd.sh").read_text()
     rendered = (
         template.replace("@SERVICE_USER@", "personal-agent")
         .replace("@APP_DIR@", "/opt/personal-agent")
@@ -68,6 +70,8 @@ def test_installer_renders_every_systemd_placeholder() -> None:
     assert "@" not in rendered
     assert "WorkingDirectory=/opt/personal-agent" in rendered
     assert "ReadWritePaths=/var/lib/personal-agent" in rendered
+    assert "/root/.local/bin/uv" in installer
+    assert 'UV_BIN="${UV_BIN:-$(command -v uv || true)}"' in installer
 
 
 def test_backup_restore_and_upgrade_are_fail_closed() -> None:

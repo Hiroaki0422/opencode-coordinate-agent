@@ -16,7 +16,6 @@ WorkingDirectory=@APP_DIR@
 EnvironmentFile=@ENV_FILE@
 Environment=HOME=@STATE_DIR@
 Environment=PYTHONUNBUFFERED=1
-ExecStartPre=/usr/bin/test -r @ENV_FILE@
 ExecStartPre=/usr/bin/test -x @APP_DIR@/.venv/bin/personal-agent
 ExecStart=@APP_DIR@/.venv/bin/personal-agent telegram
 Restart=on-failure

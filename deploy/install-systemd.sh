@@ -36,8 +36,12 @@ require_absolute_path "$UNIT_FILE" "UNIT_FILE"
     fail "remove ${APP_DIR}/.env after moving production settings to ${ENV_FILE}"
 command -v systemctl >/dev/null || fail "systemctl is unavailable"
 command -v docker >/dev/null || fail "Docker CLI is unavailable"
-UV_BIN="$(command -v uv || true)"
-[[ -n "$UV_BIN" ]] || fail "uv is unavailable"
+UV_BIN="${UV_BIN:-$(command -v uv || true)}"
+if [[ -z "$UV_BIN" && -x /root/.local/bin/uv ]]; then
+    UV_BIN=/root/.local/bin/uv
+fi
+[[ "$UV_BIN" == /* && -x "$UV_BIN" ]] || \
+    fail "uv is unavailable; install it in /usr/local/bin or set UV_BIN to an absolute executable path"
 getent group docker >/dev/null || fail "the docker group does not exist"
 
 if ! id "$SERVICE_USER" >/dev/null 2>&1; then
