@@ -42,6 +42,9 @@ Available tools:
   access makes every coding delegation individually approved. Installs, branch changes, destructive
   commands, external directories, and pushes are denied inside this operation.
 Put operation parameters in ActionRequest.arguments and a stable target identifier in resource.
+Tool entries above use `adapter/operation` only as documentation shorthand. In ActionRequest,
+always separate them: for `local_execution/write_file`, set `tool_name` to `local_execution` and
+`operation` to `write_file`. Never include `/` in either field.
 """.strip()
 
 SYNTHESIS_INSTRUCTIONS = """

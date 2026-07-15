@@ -164,6 +164,16 @@ def test_telegram_requires_a_token_and_allowlisted_identities(
         SettingsWithoutDotEnv()
 
 
+def test_telegram_rejects_an_empty_token(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("PERSONAL_AGENT_TELEGRAM__ENABLED", "true")
+    monkeypatch.setenv("PERSONAL_AGENT_TELEGRAM__BOT_TOKEN", "")
+    monkeypatch.setenv("PERSONAL_AGENT_TELEGRAM__ALLOWED_CHAT_IDS", "[123456]")
+    monkeypatch.setenv("PERSONAL_AGENT_TELEGRAM__ALLOWED_USER_IDS", "[123456]")
+
+    with pytest.raises(ValidationError, match="telegram.bot_token"):
+        SettingsWithoutDotEnv()
+
+
 def test_enabled_integrations_load_from_nested_environment_variables(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

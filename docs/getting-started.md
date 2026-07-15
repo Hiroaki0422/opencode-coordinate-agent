@@ -148,15 +148,38 @@ continuity only; it is not document ingestion, semantic search, or RAG.
 ## Optional: Run the Telegram Bot
 
 Create a bot with [BotFather](https://core.telegram.org/bots/features#botfather), keep its token out of
-Git, and send the new bot a `/start` message. Retrieve the pending update to find both identity values:
+Git, and verify the token before looking for account IDs. Paste the token without quotes or spaces:
 
 ```bash
-read -rs TELEGRAM_BOT_TOKEN
+IFS= read -rsp "Paste Telegram bot token (input hidden): " TELEGRAM_BOT_TOKEN
+read_status=$?
 echo
-curl --silent --request POST \
+test "$read_status" -eq 0 || { echo "Could not read from this terminal"; exit 1; }
+test -n "$TELEGRAM_BOT_TOKEN" || { echo "Token was empty"; exit 1; }
+printf 'Captured token length: %s characters\n' "${#TELEGRAM_BOT_TOKEN}"
+curl --silent --show-error --request POST \
+  "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/getMe" | python3 -m json.tool
+```
+
+`getMe` must return `"ok": true` and the new bot's username. Then open that bot from the same Telegram
+account that will use the agent, press **Start** or send `/start`, and retrieve the pending update:
+
+```bash
+curl --silent --show-error --request POST \
   "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/getUpdates" | python3 -m json.tool
 unset TELEGRAM_BOT_TOKEN
 ```
+
+`"ok": true, "result": []` means the token works but no update is waiting. Confirm the bot username
+with `getMe`, open that exact bot in Telegram, press **Start**, and send a text message. Run
+`getUpdates` again before starting `personal-agent telegram`; another active polling process may consume
+the update first. To wait for a new message, add `--data 'timeout=30'` to the `getUpdates` curl command
+and send the bot a message during that window.
+
+Do not replace `TELEGRAM_BOT_TOKEN` in the `read` command with the token itself. It is the shell
+variable name. Run the `read` line by itself, wait for the hidden prompt, paste the token, and press
+Enter. No characters appear while pasting because silent input is enabled. Then run the remaining
+lines in the same shell; opening a new SSH session or running `unset` discards the variable.
 
 In the returned `message`, use `chat.id` as the allowed chat ID and `from.id` as the allowed user ID.
 They are often equal in a private chat, but configure and verify both. Add the values to `.env`:
@@ -173,6 +196,28 @@ Start the long-polling process:
 ```bash
 uv run personal-agent telegram
 ```
+
+The temporary `TELEGRAM_BOT_TOKEN` variable used by curl is not an application setting. The polling
+command reads `PERSONAL_AGENT_TELEGRAM__BOT_TOKEN` from `.env` (or the process environment). Confirm
+what the application loaded without printing the secret:
+
+```bash
+uv run python -c 'from personal_agent.core.config import get_settings; s=get_settings(); t=s.telegram.bot_token; print({"enabled": s.telegram.enabled, "token_length": len(t.get_secret_value()) if t else 0, "chat_ids": s.telegram.allowed_chat_ids, "user_ids": s.telegram.allowed_user_ids})'
+```
+
+For troubleshooting, stop every existing bot process, do not run curl `getUpdates` concurrently, and
+start exactly one foreground poller with INFO diagnostics:
+
+```bash
+pgrep -af 'personal-agent telegram'
+PERSONAL_AGENT_LOG_LEVEL=INFO uv run personal-agent telegram
+```
+
+After `telegram.poll_started`, send a brand-new `/help` message. `telegram.updates_received` means the
+Bot API delivered it; `telegram.update_skipped` means that update ID was already claimed locally;
+`telegram.identity_rejected` means the loaded allowlists do not match; and `telegram.update_failed`
+means processing or the outbound reply failed. If `telegram.poll_started` never appears, startup is
+still checking or failed to initialize the configured coordinator.
 
 Only updates matching both allowlists are accepted. `/help`, `/status`, `/session`, `/history`,
 `/clear`, and `/new` mirror the interactive CLI commands. Ordinary messages reuse one durable SQLite

@@ -2,7 +2,7 @@
 
 A privacy-conscious personal AI agent that runs independently on a single Mac or VPS.
 
-The first release provides interactive CLI and Telegram conversations, provider-neutral model fallback, optional ChatGPT Codex subscription coordination, durable approval checkpoints, audited persistence, Todoist operations, source-based DuckDuckGo research, approval-gated Docker execution, and sandboxed OpenCode delegation. Retrieval-augmented memory follows in a later phase.
+The first release provides interactive CLI and Telegram conversations, provider-neutral model fallback, optional ChatGPT Codex subscription coordination, durable approval checkpoints, audited persistence, Todoist operations, source-based DuckDuckGo research, approval-gated Docker execution, and sandboxed OpenCode delegation. Roadmap development is paused for Telegram user testing; a production RAG application is being developed separately.
 
 ## Architecture
 
@@ -17,7 +17,7 @@ OpenCode + local shell + approved workspaces
 
 Each installation owns its own sessions, policy, orchestration, audit records, and local workspace. Models propose actions; deterministic policy code authorizes them. VPS-to-Mac coordination is deferred to v2.
 
-See [the architecture](docs/architecture.md), [the implementation backlog](docs/backlog.md), and [the first architecture decision](docs/decisions/0001-single-host-v1.md).
+See [the architecture](docs/architecture.md), [the frozen implementation backlog](docs/backlog.md), [the active user-testing backlog](docs/user-testing-backlog.md), and [the first architecture decision](docs/decisions/0001-single-host-v1.md).
 
 For laptop setup, CLI usage, and Telegram configuration, see [Run locally on a Mac](docs/getting-started.md).
 

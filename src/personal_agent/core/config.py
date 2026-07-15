@@ -252,7 +252,10 @@ class Settings(BaseSettings):
                     "codex_subscription must be enabled for a Codex coordinator target"
                 )
         if self.telegram.enabled:
-            if self.telegram.bot_token is None:
+            if (
+                self.telegram.bot_token is None
+                or not self.telegram.bot_token.get_secret_value().strip()
+            ):
                 raise ValueError("telegram.bot_token is required when telegram.enabled is true")
             if not self.telegram.allowed_chat_ids:
                 raise ValueError(

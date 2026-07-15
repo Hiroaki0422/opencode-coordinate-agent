@@ -2,6 +2,17 @@
 
 Items are ordered by dependency and user value. An item is complete only when its acceptance criteria and focused tests pass.
 
+## Development status
+
+Further roadmap development is paused while the current Telegram release undergoes rigorous user
+testing. New defects, usability changes, and reliability improvements are triaged in
+[`user-testing-backlog.md`](user-testing-backlog.md) and take priority over the remaining roadmap.
+
+The unfinished single-host deployment assets are paused rather than cancelled. Native RAG development
+has moved out of this repository's active roadmap: a separate production RAG application will be built
+in another session, and any personal-agent integration will be planned only after that application's
+interface and security model are known.
+
 ## P0 — Safe core loop
 
 ### Foundation
@@ -181,15 +192,14 @@ replace approval grants, LangGraph checkpoints, or future RAG-based long-term me
   - Shows the tool, resource, effect, reason, expiry, and approve/deny controls.
 - [ ] Add single-host deployment assets.
   - Documents system-service setup, backup, recovery, upgrade, and secret rotation.
+  - **Status:** Paused during Telegram user testing.
 
-## P5 — Memory and RAG
+## P5 — Memory and RAG (moved to separate development)
 
-- [ ] Add disk document ingestion with provenance and hashes.
-  - Each indexed chunk links to the original file, version/hash, and access scope.
-- [ ] Implement retrieval with source-aware answers.
-  - Retrieval respects workspace permissions and answers cite source file paths/chunks.
-- [ ] Add vector retrieval only after baseline keyword/metadata search is measured.
-  - Compare recall, latency, and answer usefulness against the non-vector baseline.
+The production RAG application will be designed and implemented separately. This repository will not
+add native ingestion, chunking, or vector retrieval during the current development pause. A future
+session may define an authenticated, source-preserving tool or API integration after the external RAG
+application is stable.
 
 ## Deferred intentionally
 

@@ -111,6 +111,12 @@ class TelegramBot:
         """Disable webhooks and poll forever until cancelled."""
 
         await self._client.delete_webhook()
+        self._logger.info(
+            "telegram.poll_started",
+            allowed_chat_count=len(self._allowed_chat_ids),
+            allowed_user_count=len(self._allowed_user_ids),
+            poll_timeout_seconds=self._settings.poll_timeout_seconds,
+        )
         offset: int | None = None
         while True:
             try:
@@ -126,6 +132,13 @@ class TelegramBot:
                 await self._sleep(self._settings.retry_delay_seconds)
                 continue
 
+            if updates:
+                self._logger.info(
+                    "telegram.updates_received",
+                    update_count=len(updates),
+                    first_update_id=updates[0].update_id,
+                    last_update_id=updates[-1].update_id,
+                )
             for update in updates:
                 offset = max(offset or 0, update.update_id + 1)
                 try:
@@ -144,7 +157,24 @@ class TelegramBot:
         """Process one update once; exposed for deterministic offline tests."""
 
         if not await self._runtime.telegram.claim_update(update.update_id):
+            self._logger.info(
+                "telegram.update_skipped",
+                update_id=update.update_id,
+                reason="already_claimed",
+            )
             return
+        update_type = (
+            "message"
+            if update.message is not None
+            else "callback_query"
+            if update.callback_query is not None
+            else "unsupported"
+        )
+        self._logger.info(
+            "telegram.update_processing",
+            update_id=update.update_id,
+            update_type=update_type,
+        )
         if update.message is not None:
             await self._handle_message(update.message)
             return
@@ -362,6 +392,11 @@ class TelegramBot:
     async def _authorize(self, *, chat_id: int, user_id: int | None) -> bool:
         allowed = chat_id in self._allowed_chat_ids and user_id in self._allowed_user_ids
         if not allowed:
+            self._logger.warning(
+                "telegram.identity_rejected",
+                chat_id=chat_id,
+                user_id=user_id,
+            )
             await self._runtime.telegram.audit_rejection(
                 chat_id=chat_id,
                 user_id=user_id,
