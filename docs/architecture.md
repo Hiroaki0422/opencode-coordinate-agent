@@ -198,6 +198,22 @@ change before the existing LangGraph `resume` operation, so duplicated, expired,
 callbacks cannot authorize an effect. A post-consumption resume failure reports the durable run ID for
 CLI recovery rather than minting a second authorization.
 
+## P4 single-host deployment
+
+The production VPS runs the Telegram transport as one dedicated `systemd` service rather than inside
+an SSH or tmux lifecycle. Versioned code is root-owned under `/opt`, root-only secrets live under
+`/etc`, and the service account can write only its `/var/lib/personal-agent` state and workspace tree.
+The account belongs to the Docker group so it remains a privileged trust boundary even though the
+systemd process has no Linux capabilities and uses filesystem, kernel, device, temporary-directory,
+and address-family hardening.
+
+Backups stop the service briefly so the application and LangGraph SQLite databases are consistent,
+include managed workspaces, and exclude environment secrets, OAuth state, and temporary files. Restore
+verifies the archive checksum, rejects unsafe paths, checks SQLite integrity in staging, preserves
+current credentials, and rolls back the state switch if the restored service cannot start. Upgrades
+are backup-first and fast-forward-only; destructive Git rollback is always an explicit administrator
+decision.
+
 ## Model boundaries
 
 | Role | Provider | Authority |

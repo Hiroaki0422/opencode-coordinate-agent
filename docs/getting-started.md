@@ -174,6 +174,18 @@ Start the long-polling process:
 uv run personal-agent telegram
 ```
 
+This is a foreground process, not an installed service. Closing its SSH session normally stops it.
+During VPS testing, keep it attached to a persistent terminal such as `tmux`:
+
+```bash
+tmux new -s personal-agent
+cd ~/personal-agent
+PERSONAL_AGENT_LOG_LEVEL=INFO uv run personal-agent telegram
+```
+
+Detach with `Ctrl+B`, then `D`; later inspect it with `tmux attach -t personal-agent`. Production
+startup, restart, backup, and recovery use the [single-host VPS deployment](deployment.md) assets.
+
 Only updates matching both allowlists are accepted. `/help`, `/status`, `/session`, `/history`,
 `/clear`, and `/new` mirror the interactive CLI commands. Ordinary messages reuse one durable SQLite
 conversation session. The bot shows `Planning…` while the workflow runs and replaces it with the final
@@ -190,6 +202,13 @@ Run only one polling process for a bot token. Startup removes any configured web
 does not deliver `getUpdates` while a webhook is active. Stop polling with `Ctrl+C`. To disable mobile
 access, stop the process, set `PERSONAL_AGENT_TELEGRAM__ENABLED=false`, and rotate or revoke the bot
 token through BotFather when appropriate.
+
+If replies stop, send a brand-new `/help` message first because it does not call a model. If `/help`
+fails, check the polling process and Telegram transport; if `/help` works but an ordinary prompt does
+not, check coordinator authentication, timeout, and provider logs. Do not call Bot API `getUpdates`
+manually while the application poller is active because competing long polls can interrupt one
+another. INFO logs distinguish `telegram.poll_started`, `telegram.updates_received`,
+`telegram.identity_rejected`, and `telegram.update_failed`.
 
 Test the integration without contacting Telegram:
 

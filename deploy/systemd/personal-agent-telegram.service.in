@@ -1,0 +1,50 @@
+[Unit]
+Description=Personal Agent Telegram transport
+Documentation=file://@APP_DIR@/docs/deployment.md
+Wants=network-online.target
+After=network-online.target docker.service
+Requires=docker.service
+StartLimitIntervalSec=120
+StartLimitBurst=5
+
+[Service]
+Type=simple
+User=@SERVICE_USER@
+Group=@SERVICE_USER@
+SupplementaryGroups=docker
+WorkingDirectory=@APP_DIR@
+EnvironmentFile=@ENV_FILE@
+Environment=HOME=@STATE_DIR@
+Environment=PYTHONUNBUFFERED=1
+ExecStartPre=/usr/bin/test -r @ENV_FILE@
+ExecStartPre=/usr/bin/test -x @APP_DIR@/.venv/bin/personal-agent
+ExecStart=@APP_DIR@/.venv/bin/personal-agent telegram
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=45
+KillSignal=SIGINT
+KillMode=control-group
+SuccessExitStatus=SIGINT SIGTERM
+UMask=0077
+
+NoNewPrivileges=true
+PrivateDevices=true
+PrivateTmp=true
+ProtectClock=true
+ProtectControlGroups=true
+ProtectHome=true
+ProtectHostname=true
+ProtectKernelLogs=true
+ProtectKernelModules=true
+ProtectKernelTunables=true
+ProtectSystem=strict
+ReadWritePaths=@STATE_DIR@
+CapabilityBoundingSet=
+LockPersonality=true
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+RestrictRealtime=true
+RestrictSUIDSGID=true
+SystemCallArchitectures=native
+
+[Install]
+WantedBy=multi-user.target

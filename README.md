@@ -17,7 +17,7 @@ OpenCode + local shell + approved workspaces
 
 Each installation owns its own sessions, policy, orchestration, audit records, and local workspace. Models propose actions; deterministic policy code authorizes them. VPS-to-Mac coordination is deferred to v2.
 
-See [the architecture](docs/architecture.md), [the frozen implementation backlog](docs/backlog.md), [the active user-testing backlog](docs/user-testing-backlog.md), and [the first architecture decision](docs/decisions/0001-single-host-v1.md).
+See [the architecture](docs/architecture.md), [the implementation backlog](docs/backlog.md), [the active user-testing backlog](docs/user-testing-backlog.md), [the VPS deployment guide](docs/deployment.md), and [the first architecture decision](docs/decisions/0001-single-host-v1.md).
 
 For laptop setup, CLI usage, and Telegram configuration, see [Run locally on a Mac](docs/getting-started.md).
 
@@ -55,4 +55,4 @@ uv run ruff check .
 
 Set only the integrations you intend to use. Startup validation requires credentials only for integrations whose `enabled` flag is `true`.
 
-P0 through the Telegram integration in P4 are complete. Build the sandbox image with `docker build -t personal-agent-sandbox:latest docker/sandbox`, configure either API-backed models or the optional Codex subscription coordinator, and enable local execution/OpenCode as needed. Start an interactive conversation with `uv run personal-agent chat`, run mobile polling with `uv run personal-agent telegram`, or use `personal-agent run` plus `personal-agent approve` or `personal-agent deny` for machine-readable automation. Docker networking stays disabled except for individually approved actions such as a DeepSeek-backed OpenCode task.
+P0 through P4 are complete. Build the sandbox image with `docker build -t personal-agent-sandbox:latest docker/sandbox`, configure either API-backed models or the optional Codex subscription coordinator, and enable local execution/OpenCode as needed. Start an interactive conversation with `uv run personal-agent chat`, run mobile polling with `uv run personal-agent telegram`, or use `personal-agent run` plus `personal-agent approve` or `personal-agent deny` for machine-readable automation. For durable VPS polling, install the hardened systemd service described in [`docs/deployment.md`](docs/deployment.md). Docker networking stays disabled except for individually approved actions such as a DeepSeek-backed OpenCode task.

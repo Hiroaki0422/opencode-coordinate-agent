@@ -4,14 +4,14 @@ Items are ordered by dependency and user value. An item is complete only when it
 
 ## Development status
 
-Further roadmap development is paused while the current Telegram release undergoes rigorous user
+General roadmap development is paused while the current Telegram release undergoes rigorous user
 testing. New defects, usability changes, and reliability improvements are triaged in
-[`user-testing-backlog.md`](user-testing-backlog.md) and take priority over the remaining roadmap.
+[`user-testing-backlog.md`](user-testing-backlog.md). The single-host deployment exception is now
+implemented; further roadmap work remains paused while its VPS behavior is verified.
 
-The unfinished single-host deployment assets are paused rather than cancelled. Native RAG development
-has moved out of this repository's active roadmap: a separate production RAG application will be built
-in another session, and any personal-agent integration will be planned only after that application's
-interface and security model are known.
+Native RAG development has moved out of this repository's active roadmap: a separate production RAG
+application will be built in another session, and any personal-agent integration will be planned only
+after that application's interface and security model are known.
 
 ## P0 — Safe core loop
 
@@ -190,9 +190,16 @@ replace approval grants, LangGraph checkpoints, or future RAG-based long-term me
   - Rejects messages outside the configured account and routes approvals through one-time action tokens.
 - [x] Render approvals and local-execution progress for Telegram.
   - Shows the tool, resource, effect, reason, expiry, and approve/deny controls.
-- [ ] Add single-host deployment assets.
+- [x] Add single-host deployment assets.
   - Documents system-service setup, backup, recovery, upgrade, and secret rotation.
-  - **Status:** Paused during Telegram user testing.
+  - **Status:** Complete; awaiting real-VPS verification through the user-testing backlog.
+  - [x] Define a dedicated-user filesystem and trust boundary for one Linux VPS.
+  - [x] Add a hardened `systemd` unit and production environment template.
+  - [x] Add an idempotent installer that prepares directories without starting unconfigured service.
+  - [x] Add consistent state backup and checksum-protected restore utilities.
+  - [x] Add a backup-first, fast-forward-only upgrade utility.
+  - [x] Document installation, operations, recovery, rollback, and secret rotation.
+  - [x] Add offline validation for templates and shell assets.
 
 ## P5 — Memory and RAG (moved to separate development)
 
