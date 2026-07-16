@@ -99,6 +99,9 @@ class TelegramRuntime(Protocol):
         self,
         session_id: UUID,
         run_id: UUID | None = None,
+        *,
+        tool_name: str | None = None,
+        failed_only: bool = False,
     ) -> OperationReceiptInspection | None: ...
 
 
@@ -214,13 +217,18 @@ class TelegramBot:
             workspace = await self._runtime.active_workspace(session_id)
             await self._send_text(chat_id, f"Active workspace: {workspace or 'none'}")
             return
-        receipt_view = self._natural_receipt_request(text)
-        if receipt_view is not None:
+        receipt_request = self._natural_receipt_request(text)
+        if receipt_request is not None:
+            receipt_view, tool_name, failed_only = receipt_request
             session_id = await self._runtime.telegram.get_or_create_session(
                 chat_id=chat_id,
                 user_id=user_id,
             )
-            receipt = await self._runtime.operation_receipt(session_id)
+            receipt = await self._runtime.operation_receipt(
+                session_id,
+                tool_name=tool_name,
+                failed_only=failed_only,
+            )
             await self._send_text(chat_id, render_operation_receipt(receipt, receipt_view))
             return
         if self._natural_created_file_request(text):
@@ -605,7 +613,9 @@ class TelegramBot:
         return "\n\n".join(f"{message.role}> {message.content}" for message in history)
 
     @staticmethod
-    def _natural_receipt_request(text: str) -> str | None:
+    def _natural_receipt_request(
+        text: str,
+    ) -> tuple[str, str | None, bool] | None:
         normalized = " ".join(text.casefold().split()).rstrip("?.!")
         if normalized in {
             "show the last opencode output",
@@ -613,9 +623,18 @@ class TelegramBot:
             "show the opencode operation log",
             "show opencode operation log",
         }:
-            return "log"
+            return ("log", "opencode", False)
+        if "opencode" in normalized and any(
+            marker in normalized for marker in ("failed", "failure", "error", "why")
+        ):
+            return ("log", "opencode", True)
+        if any(
+            phrase in normalized
+            for phrase in ("failure log", "failed log", "error log")
+        ):
+            return ("log", None, True)
         if normalized in {"show the last operation", "show last operation"}:
-            return "summary"
+            return ("summary", None, False)
         return None
 
     @staticmethod

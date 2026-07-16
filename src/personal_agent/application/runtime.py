@@ -151,6 +151,9 @@ def render_operation_receipt(
         stderr = str(payload.get("stderr_tail") or "").strip()
         if stderr:
             lines.append(f"stderr:\n{stderr}")
+        stdout = str(payload.get("stdout_tail") or "").strip()
+        if stdout:
+            lines.append(f"stdout:\n{stdout}")
         return "\n".join(lines) or "No sanitized worker log events were recorded."
     if view == "diff":
         return str(payload.get("diff") or payload.get("diff_summary") or "No diff recorded.")
@@ -393,6 +396,9 @@ class AgentRuntime:
         self,
         session_id: UUID,
         run_id: UUID | None = None,
+        *,
+        tool_name: str | None = None,
+        failed_only: bool = False,
     ) -> OperationReceiptInspection | None:
         async with self._database.unit_of_work() as unit_of_work:
             if await unit_of_work.sessions.get(session_id) is None:
@@ -403,7 +409,11 @@ class AgentRuntime:
                     run_id=run_id,
                 )
                 if run_id is not None
-                else await unit_of_work.operation_receipts.latest_for_session(session_id)
+                else await unit_of_work.operation_receipts.latest_for_session(
+                    session_id,
+                    tool_name=tool_name,
+                    failed_only=failed_only,
+                )
             )
             if receipt is None:
                 return None

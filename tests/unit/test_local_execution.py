@@ -310,6 +310,40 @@ async def test_local_tool_returns_command_audit_metadata(tmp_path: Path) -> None
     assert sandbox.calls[0]["network_enabled"] is True
 
 
+async def test_local_list_files_excludes_git_metadata(tmp_path: Path) -> None:
+    workspace = tmp_path / "repo"
+    workspace.mkdir()
+    sandbox = FakeSandbox()
+    tool = LocalExecutionTool(
+        cast(DockerSandbox, sandbox),
+        WorkspaceService(tmp_path, cast(DockerSandbox, sandbox)),
+    )
+
+    result = await tool.execute(
+        ActionRequest(
+            tool_name="local_execution",
+            operation="list_files",
+            resource=str(workspace),
+            risk_level=RiskLevel.READ,
+            summary="List files",
+        )
+    )
+
+    command = cast(list[str], sandbox.calls[0]["command"])
+    assert result.success is True
+    assert command == [
+        "find",
+        ".",
+        "-path",
+        "./.git",
+        "-prune",
+        "-o",
+        "-type",
+        "f",
+        "-print",
+    ]
+
+
 async def test_local_write_forwards_content_and_verifies_its_digest(tmp_path: Path) -> None:
     workspace = tmp_path / "repo"
     workspace.mkdir()

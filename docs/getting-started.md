@@ -224,6 +224,11 @@ exit codes, expected and observed files, and verification status; they exclude e
 test stdout/stderr. No automatic receipt retention is currently configured, so normal SQLite backup
 and deletion policy applies.
 
+Requests such as `Can you show me the failure log?` and `Why did OpenCode fail?` retrieve the newest
+failed or OpenCode receipt directly. They do not ask the coordinator to search the workspace. A
+workspace file listing is not an operation log; `.git` metadata is excluded from normal file-list
+results.
+
 Run only one polling process for a bot token. Startup removes any configured webhook because Telegram
 does not deliver `getUpdates` while a webhook is active. Stop polling with `Ctrl+C`. To disable mobile
 access, stop the process, set `PERSONAL_AGENT_TELEGRAM__ENABLED=false`, and rotate or revoke the bot

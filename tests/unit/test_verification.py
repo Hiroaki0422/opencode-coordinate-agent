@@ -233,3 +233,38 @@ async def test_opencode_provider_failure_with_changes_stays_failed() -> None:
     assert verification.success is False
     assert "app.py" in verification.response
     assert "provider operation failed" in verification.response
+
+
+async def test_opencode_provider_failure_without_changes_exposes_safe_diagnostics() -> None:
+    action = ActionRequest(
+        tool_name="opencode",
+        operation="code_task",
+        resource="/workspace/project",
+        risk_level=RiskLevel.RISKY,
+        summary="Create app",
+    )
+    result = ToolExecutionResult(
+        tool_name="opencode",
+        operation="code_task",
+        success=False,
+        data={
+            "changed_files": [],
+            "effect_observed": False,
+            "verification_reason": "provider_error",
+            "stderr_tail": "provider rejected the configured model",
+        },
+        error="OpenCode exited with code 1",
+    )
+
+    verification = await ResponseVerifier().verify(
+        user_input="Create app",
+        decision_message="Delegating.",
+        action=action,
+        result=result,
+        coordinator=FakeCoordinator([]),
+    )
+
+    assert verification.success is False
+    assert "made no file changes" in verification.response
+    assert "provider rejected the configured model" in verification.response
+    assert "/last-operation log" in verification.response

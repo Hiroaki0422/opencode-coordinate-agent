@@ -79,14 +79,23 @@ class LocalExecutionTool:
         workspace = self._workspaces.resolve_workspace(action.resource)
         if action.operation == "list_files":
             self._require_risk(action, RiskLevel.READ)
+            command = [
+                "find",
+                ".",
+                "-path",
+                "./.git",
+                "-prune",
+                "-o",
+                "-type",
+                "f",
+                "-print",
+            ]
             result = await self._sandbox.run(
                 workspace=workspace,
-                command=["find", ".", "-maxdepth", "3", "-type", "f", "-print"],
+                command=command,
                 writable=False,
             )
-            return self._result(
-                action, result, workspace=workspace, command=["find", ".", "-maxdepth", "3"]
-            )
+            return self._result(action, result, workspace=workspace, command=command)
         if action.operation == "read_file":
             self._require_risk(action, RiskLevel.READ)
             relative_path = str(action.arguments.get("path", ""))

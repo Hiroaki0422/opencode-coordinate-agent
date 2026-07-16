@@ -97,6 +97,33 @@ class ResponseVerifier:
         effect_observed = result.data.get("effect_observed") is True
         missing = result.data.get("missing_expected_files", [])
         reason = result.data.get("verification_reason")
+        files = (
+            ", ".join(str(path) for path in changed_files)
+            if isinstance(changed_files, list) and changed_files
+            else "none"
+        )
+        if reason == "provider_error":
+            detail = str(
+                result.data.get("stderr_tail")
+                or result.data.get("report")
+                or result.data.get("stdout_tail")
+                or ""
+            ).strip()
+            detail_suffix = f"\n\nSanitized provider output:\n{detail[-2_000:]}" if detail else ""
+            effect_message = (
+                f"OpenCode created or changed: {files}. The observed changes remain in the "
+                "workspace; no rollback occurred."
+                if effect_observed
+                else "OpenCode made no file changes."
+            )
+            return VerificationResult(
+                success=False,
+                response=(
+                    f"{decision_message}\n\n{effect_message} The provider operation failed: "
+                    f"{result.error or 'unknown error'}.{detail_suffix}\n\n"
+                    "Use `/last-operation log` to inspect the saved sanitized operation receipt."
+                ),
+            )
         if not effect_observed:
             return VerificationResult(
                 success=False,
@@ -105,20 +132,7 @@ class ResponseVerifier:
                     f"{result.error or reason or 'no file changes were observed'}."
                 ),
             )
-        files = (
-            ", ".join(str(path) for path in changed_files)
-            if isinstance(changed_files, list)
-            else "unknown files"
-        )
         retained = " The observed changes remain in the workspace; no rollback occurred."
-        if reason == "provider_error":
-            return VerificationResult(
-                success=False,
-                response=(
-                    f"{decision_message}\n\nOpenCode created or changed: {files}, but the "
-                    f"provider operation failed: {result.error or 'unknown error'}.{retained}"
-                ),
-            )
         if verified is not True:
             expected = (
                 ", ".join(str(path) for path in missing)

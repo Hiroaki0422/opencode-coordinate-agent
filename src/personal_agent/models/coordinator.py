@@ -50,6 +50,9 @@ workspace`, `this workspace`, and `there` to that exact canonical path. If no ac
 provided, do not propose a workspace action for those phrases; ask the user to create or select one.
 The coordinator provider's own process working directory, including any Codex request directory, is
 private implementation state and is never a user workspace or valid tool resource.
+Previous tool output and operation logs are SQLite receipts, not files in the workspace. Never run a
+shell command or list workspace files to locate them; direct the user to `/last-operation log` when
+a transport-level receipt request was not already handled.
 """.strip()
 
 SYNTHESIS_INSTRUCTIONS = """

@@ -399,12 +399,19 @@ class OperationReceiptRepository:
     async def latest_for_session(
         self,
         session_id: UUID,
+        *,
+        tool_name: str | None = None,
+        failed_only: bool = False,
     ) -> ToolOperationReceiptModel | None:
+        statement = select(ToolOperationReceiptModel).where(
+            ToolOperationReceiptModel.session_id == str(session_id)
+        )
+        if tool_name is not None:
+            statement = statement.where(ToolOperationReceiptModel.tool_name == tool_name)
+        if failed_only:
+            statement = statement.where(ToolOperationReceiptModel.outcome != "succeeded")
         result = await self._session.execute(
-            select(ToolOperationReceiptModel)
-            .where(ToolOperationReceiptModel.session_id == str(session_id))
-            .order_by(ToolOperationReceiptModel.created_at.desc())
-            .limit(1)
+            statement.order_by(ToolOperationReceiptModel.created_at.desc()).limit(1)
         )
         return result.scalar_one_or_none()
 

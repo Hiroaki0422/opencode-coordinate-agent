@@ -528,6 +528,7 @@ async def test_gateway_persists_partial_receipt_and_active_workspace(
     workspace.mkdir()
     gateway = ToolGateway(database)
     gateway.register(PartialOpenCodeTool())
+    gateway.register(FakeTodoistTool())
     action = ActionRequest(
         tool_name="opencode",
         operation="code_task",
@@ -537,6 +538,17 @@ async def test_gateway_persists_partial_receipt_and_active_workspace(
     )
 
     await gateway.execute(session_id=session_id, run_id=run_id, action=action)
+    await gateway.execute(
+        session_id=session_id,
+        run_id=uuid4(),
+        action=ActionRequest(
+            tool_name="todoist",
+            operation="list_tasks",
+            resource="all",
+            risk_level=RiskLevel.READ,
+            summary="List tasks",
+        ),
+    )
 
     async with database.unit_of_work() as unit_of_work:
         receipt = await unit_of_work.operation_receipts.get_for_session(
@@ -544,11 +556,21 @@ async def test_gateway_persists_partial_receipt_and_active_workspace(
             run_id=run_id,
         )
         active = await unit_of_work.session_workspaces.get(session_id)
+        latest_failed = await unit_of_work.operation_receipts.latest_for_session(
+            session_id,
+            failed_only=True,
+        )
+        latest_opencode = await unit_of_work.operation_receipts.latest_for_session(
+            session_id,
+            tool_name="opencode",
+        )
         receipt_snapshot = (
             receipt.outcome if receipt is not None else None,
             receipt.payload if receipt is not None else None,
         )
         active_workspace = active.active_workspace if active is not None else None
+        latest_failed_run_id = latest_failed.run_id if latest_failed is not None else None
+        latest_opencode_run_id = latest_opencode.run_id if latest_opencode is not None else None
 
     assert receipt is not None
     assert active is not None
@@ -556,6 +578,8 @@ async def test_gateway_persists_partial_receipt_and_active_workspace(
     assert receipt_snapshot[1]["changed_files"] == ["todo.py"]
     assert receipt_snapshot[1]["worker_events"][0]["text"] == "Created todo.py"
     assert active_workspace == str(workspace)
+    assert latest_failed_run_id == str(run_id)
+    assert latest_opencode_run_id == str(run_id)
 
 
 async def test_duplicate_resume_does_not_repeat_external_mutation(

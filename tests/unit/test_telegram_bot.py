@@ -86,6 +86,7 @@ class FakeRuntime:
         self.results = results
         self.submit_calls: list[tuple[str, UUID | None]] = []
         self.resume_calls: list[tuple[UUID, bool]] = []
+        self.operation_receipt_calls: list[tuple[UUID | None, str | None, bool]] = []
         self.active = "/workspaces/todo-test"
         self.available = ("/workspaces/todo-test", "/workspaces/other")
         self.receipt = OperationReceiptInspection(
@@ -151,8 +152,12 @@ class FakeRuntime:
         self,
         session_id: UUID,
         run_id: UUID | None = None,
+        *,
+        tool_name: str | None = None,
+        failed_only: bool = False,
     ) -> OperationReceiptInspection | None:
         del session_id
+        self.operation_receipt_calls.append((run_id, tool_name, failed_only))
         return self.receipt if run_id in {None, RUN_ID} else None
 
 
@@ -365,6 +370,21 @@ async def test_natural_opencode_log_request_bypasses_model_inference() -> None:
     )
 
     assert runtime.submit_calls == []
+    assert client.sent[-1]["text"] == "#1 text: Created todo.py"
+    assert runtime.operation_receipt_calls == [(None, "opencode", False)]
+
+
+async def test_natural_failure_log_retrieves_latest_failed_receipt() -> None:
+    runtime = FakeRuntime([])
+    client = FakeClient()
+    bot = TelegramBot(settings=settings(), runtime=runtime, client=client)
+
+    await bot.process_update(
+        message_update(update_id=29, text="Can you show me the failure log?")
+    )
+
+    assert runtime.submit_calls == []
+    assert runtime.operation_receipt_calls == [(None, None, True)]
     assert client.sent[-1]["text"] == "#1 text: Created todo.py"
 
 
