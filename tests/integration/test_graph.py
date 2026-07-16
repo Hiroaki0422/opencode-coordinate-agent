@@ -222,6 +222,86 @@ async def test_graph_canonicalizes_current_workspace_before_policy(
     assert result["action"]["resource"] == workspace
 
 
+async def test_graph_blocks_workspace_action_when_session_has_no_workspace(
+    database: Database,
+    tmp_path: Path,
+) -> None:
+    session_id = await create_session(database)
+    run_id = str(uuid4())
+    coordinator = FakeCoordinator(
+        CoordinatorDecision(
+            message="I will use the current directory.",
+            action=ActionRequest(
+                tool_name="opencode",
+                operation="code_task",
+                resource="/var/lib/personal-agent/tmp/codex/request-fake",
+                risk_level=RiskLevel.RISKY,
+                summary="Create todo app",
+                arguments={"task": "Create todo app"},
+            ),
+        )
+    )
+
+    async with open_agent_graph(
+        checkpoint_path=tmp_path / "missing-workspace.sqlite3",
+        coordinator=coordinator,
+        policy=PolicyService(database, PolicySettings()),
+    ) as graph:
+        result = await graph.ainvoke(
+            {
+                "session_id": session_id,
+                "run_id": run_id,
+                "user_input": "Create a todo app with OpenCode",
+                "active_workspace": None,
+            },
+            config=cast(Any, {"configurable": {"thread_id": run_id}}),
+        )
+
+    assert result["status"] == "completed"
+    assert result["action"] is None
+    assert "No active workspace is selected" in result["response"]
+    assert "No tool action was attempted" in result["response"]
+
+
+async def test_graph_uses_active_workspace_instead_of_model_working_directory(
+    database: Database,
+    tmp_path: Path,
+) -> None:
+    session_id = await create_session(database)
+    run_id = str(uuid4())
+    workspace = str(tmp_path / "selected-workspace")
+    coordinator = FakeCoordinator(
+        CoordinatorDecision(
+            message="I will delegate it.",
+            action=ActionRequest(
+                tool_name="opencode",
+                operation="code_task",
+                resource="/var/lib/personal-agent/tmp/codex/request-fake",
+                risk_level=RiskLevel.RISKY,
+                summary="Create todo app",
+                arguments={"task": "Create todo app"},
+            ),
+        )
+    )
+
+    async with open_agent_graph(
+        checkpoint_path=tmp_path / "authoritative-workspace.sqlite3",
+        coordinator=coordinator,
+        policy=PolicyService(database, PolicySettings()),
+    ) as graph:
+        result = await graph.ainvoke(
+            {
+                "session_id": session_id,
+                "run_id": run_id,
+                "user_input": "Use OpenCode in the current workspace",
+                "active_workspace": workspace,
+            },
+            config=cast(Any, {"configurable": {"thread_id": run_id}}),
+        )
+
+    assert result["action"]["resource"] == workspace
+
+
 async def test_graph_resumes_approval_from_durable_checkpoint(
     database: Database,
     tmp_path: Path,
@@ -328,6 +408,7 @@ async def test_codex_proposed_action_still_pauses_at_policy(
         "session_id": session_id,
         "run_id": run_id,
         "user_input": "Update project",
+        "active_workspace": "/workspace/project",
     }
 
     async with open_agent_graph(

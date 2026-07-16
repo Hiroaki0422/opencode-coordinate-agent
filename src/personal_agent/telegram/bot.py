@@ -206,6 +206,14 @@ class TelegramBot:
         if not text:
             await self._send_text(chat_id, "Send a text request or type /help.")
             return
+        if self._natural_workspace_status_request(text):
+            session_id = await self._runtime.telegram.get_or_create_session(
+                chat_id=chat_id,
+                user_id=user_id,
+            )
+            workspace = await self._runtime.active_workspace(session_id)
+            await self._send_text(chat_id, f"Active workspace: {workspace or 'none'}")
+            return
         receipt_view = self._natural_receipt_request(text)
         if receipt_view is not None:
             session_id = await self._runtime.telegram.get_or_create_session(
@@ -609,6 +617,19 @@ class TelegramBot:
         if normalized in {"show the last operation", "show last operation"}:
             return "summary"
         return None
+
+    @staticmethod
+    def _natural_workspace_status_request(text: str) -> bool:
+        normalized = " ".join(text.casefold().split()).rstrip("?.!")
+        return normalized in {
+            "which workspace are u using now",
+            "which workspace are you using now",
+            "which workspace are you using",
+            "which workspace is active",
+            "what is the active workspace",
+            "what is the current workspace",
+            "show the active workspace",
+        }
 
     @staticmethod
     def _natural_created_file_request(text: str) -> bool:

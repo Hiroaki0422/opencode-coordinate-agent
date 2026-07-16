@@ -288,6 +288,11 @@ After creation, that canonical path becomes the session's active workspace. Late
 resource before policy and approval. OpenCode changes remain in place even when expected-file or test
 verification fails, and the response distinguishes observed effects from verified completion.
 
+OpenCode never uses the Codex coordinator's temporary request directory as a workspace. If a session
+has no active workspace, workspace-dependent actions stop before policy or tool execution and ask you
+to create or select one. Check the session deterministically with `/workspace`; use `/workspaces` and
+`/workspace <name>` to select an existing repository.
+
 Equivalent host CLI inspection commands are:
 
 ```bash

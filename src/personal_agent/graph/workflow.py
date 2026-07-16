@@ -19,6 +19,15 @@ from personal_agent.tools import ResponseVerifier, ToolExecutionResult, ToolGate
 CompiledAgentGraph = CompiledStateGraph[AgentState, None, AgentState, AgentState]
 
 
+def _requires_active_workspace(action: ActionRequest) -> bool:
+    if action.tool_name == "opencode":
+        return True
+    return action.tool_name == "local_execution" and action.operation not in {
+        "create_workspace",
+        "health_check",
+    }
+
+
 def build_agent_graph(
     *,
     coordinator: Coordinator,
@@ -44,16 +53,18 @@ def build_agent_graph(
                 active_workspace=active_workspace,
             )
         action = decision.action
-        if action is not None and active_workspace is not None:
-            normalized_resource = action.resource.strip().casefold()
-            if normalized_resource in {
-                "current workspace",
-                "the current workspace",
-                "this workspace",
-                "workspace",
-                ".",
-            }:
-                action = action.model_copy(update={"resource": active_workspace})
+        if action is not None and _requires_active_workspace(action):
+            if active_workspace is None:
+                return {
+                    "decision_message": (
+                        "No active workspace is selected for this session. Create a workspace "
+                        "first, or use `/workspaces` and `/workspace <name>` in Telegram to "
+                        "select an existing workspace. No tool action was attempted."
+                    ),
+                    "action": None,
+                    "status": "planned",
+                }
+            action = action.model_copy(update={"resource": active_workspace})
         return {
             "decision_message": decision.message,
             "action": action.model_dump(mode="json") if action else None,

@@ -48,6 +48,8 @@ always separate them: for `local_execution/write_file`, set `tool_name` to `loca
 When trusted runtime context includes an active workspace, resolve phrases such as `current
 workspace`, `this workspace`, and `there` to that exact canonical path. If no active workspace is
 provided, do not propose a workspace action for those phrases; ask the user to create or select one.
+The coordinator provider's own process working directory, including any Codex request directory, is
+private implementation state and is never a user workspace or valid tool resource.
 """.strip()
 
 SYNTHESIS_INSTRUCTIONS = """

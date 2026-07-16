@@ -324,6 +324,19 @@ async def test_workspace_and_operation_commands_are_session_scoped() -> None:
     assert any("Created todo.py" in item for item in sent)
 
 
+async def test_natural_workspace_question_bypasses_model_inference() -> None:
+    runtime = FakeRuntime([])
+    client = FakeClient()
+    bot = TelegramBot(settings=settings(), runtime=runtime, client=client)
+
+    await bot.process_update(
+        message_update(update_id=28, text="Which workspace are u using now")
+    )
+
+    assert runtime.submit_calls == []
+    assert client.sent[-1]["text"] == "Active workspace: /workspaces/todo-test"
+
+
 async def test_nonexistent_workspace_selection_returns_deterministic_error() -> None:
     runtime = FakeRuntime([])
 

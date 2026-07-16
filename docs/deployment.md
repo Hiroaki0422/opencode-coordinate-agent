@@ -4,6 +4,25 @@ This guide deploys one independent Personal Agent Telegram process as a hardened
 a Linux VPS. It replaces tmux for normal operation. It does not coordinate with another host and does
 not install an HTTP endpoint.
 
+## Quick update after a GitHub push
+
+After committing locally and pushing the tested change to the GitHub `main` branch, connect to the
+VPS and run:
+
+```bash
+cd /opt/personal-agent
+sudo git status --short
+sudo BRANCH=main ./deploy/upgrade-systemd.sh
+sudo systemctl status personal-agent-telegram.service --no-pager
+sudo journalctl -u personal-agent-telegram.service -n 100 --no-pager
+```
+
+`git status --short` must return no output before the upgrade. The upgrade script creates a state
+backup, performs a fast-forward-only update from GitHub, synchronizes locked dependencies, reinstalls
+the systemd unit, rebuilds the Docker sandbox image, starts the service, and lets application startup
+apply pending SQLite migrations. Do not run a separate `git pull` first. See [Upgrade](#upgrade) for
+rollback and post-upgrade details.
+
 ## Supported topology
 
 The deployment assets assume:
