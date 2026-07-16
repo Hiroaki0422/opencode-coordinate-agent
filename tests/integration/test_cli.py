@@ -45,5 +45,8 @@ def test_cli_exposes_p0_commands() -> None:
         "inspect",
         "codex-health",
         "telegram",
+        "operation",
+        "workspace",
+        "workspaces",
     ):
         assert command in result.output

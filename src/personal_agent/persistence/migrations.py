@@ -117,10 +117,58 @@ async def _migration_003_telegram_transport(connection: AsyncConnection) -> None
     )
 
 
+async def _migration_004_workspace_and_operation_receipts(
+    connection: AsyncConnection,
+) -> None:
+    await connection.exec_driver_sql(
+        """
+        CREATE TABLE IF NOT EXISTS session_workspaces (
+            session_id VARCHAR(36) PRIMARY KEY,
+            active_workspace TEXT NOT NULL,
+            updated_at DATETIME NOT NULL,
+            FOREIGN KEY(session_id) REFERENCES sessions (id) ON DELETE CASCADE
+        )
+        """
+    )
+    await connection.exec_driver_sql(
+        """
+        CREATE TABLE IF NOT EXISTS tool_operation_receipts (
+            id VARCHAR(36) PRIMARY KEY,
+            session_id VARCHAR(36) NOT NULL,
+            run_id VARCHAR(36) NOT NULL UNIQUE,
+            action_id VARCHAR(36) NOT NULL,
+            audit_event_id VARCHAR(36) NOT NULL,
+            tool_name VARCHAR(100) NOT NULL,
+            operation VARCHAR(100) NOT NULL,
+            resource TEXT NOT NULL,
+            success BOOLEAN NOT NULL,
+            outcome VARCHAR(20) NOT NULL,
+            payload JSON NOT NULL,
+            created_at DATETIME NOT NULL,
+            FOREIGN KEY(session_id) REFERENCES sessions (id) ON DELETE CASCADE,
+            FOREIGN KEY(audit_event_id) REFERENCES audit_events (id) ON DELETE RESTRICT
+        )
+        """
+    )
+    for column in (
+        "session_id",
+        "run_id",
+        "action_id",
+        "tool_name",
+        "outcome",
+        "created_at",
+    ):
+        await connection.exec_driver_sql(
+            f"CREATE INDEX IF NOT EXISTS ix_tool_operation_receipts_{column} "
+            f"ON tool_operation_receipts ({column})"
+        )
+
+
 MIGRATIONS: tuple[tuple[int, str, Migration], ...] = (
     (1, "initial persistence schema", _migration_001_initial_schema),
     (2, "conversation message storage", _migration_002_conversation_messages),
     (3, "telegram transport state", _migration_003_telegram_transport),
+    (4, "active workspace and operation receipts", _migration_004_workspace_and_operation_receipts),
 )
 
 

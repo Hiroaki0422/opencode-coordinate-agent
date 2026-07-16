@@ -8,6 +8,7 @@ class AgentState(TypedDict):
     run_id: str
     user_input: str
     conversation_history: NotRequired[list[dict[str, str]]]
+    active_workspace: NotRequired[str | None]
     decision_message: NotRequired[str]
     action: NotRequired[dict[str, Any] | None]
     policy_decision: NotRequired[str]

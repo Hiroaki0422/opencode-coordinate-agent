@@ -215,6 +215,35 @@ async def test_runtime_context_survives_restart_and_excludes_paused_turn(
     assert restarted_graph.inputs[1]["conversation_history"] == expected_history
 
 
+async def test_runtime_active_workspace_survives_restart_and_is_session_scoped(
+    database: Database,
+) -> None:
+    first_runtime = build_runtime(database, FakeGraph([]))
+    first_session = await first_runtime.create_session()
+    second_session = await first_runtime.create_session()
+    async with database.unit_of_work() as unit_of_work:
+        await unit_of_work.session_workspaces.set(first_session, "/workspaces/todo-test")
+        await unit_of_work.audit.append(
+            event_type="session.workspace_selected",
+            actor="test",
+            session_id=first_session,
+        )
+        await unit_of_work.commit()
+
+    restarted_graph = FakeGraph(
+        [
+            {"status": "completed", "response": "Used workspace"},
+            {"status": "completed", "response": "No workspace"},
+        ]
+    )
+    restarted_runtime = build_runtime(database, restarted_graph)
+    await restarted_runtime.submit("Read current workspace", session_id=first_session)
+    await restarted_runtime.submit("Read current workspace", session_id=second_session)
+
+    assert restarted_graph.inputs[0]["active_workspace"] == "/workspaces/todo-test"
+    assert restarted_graph.inputs[1]["active_workspace"] is None
+
+
 async def test_runtime_clear_history_is_independent_and_audited(
     database: Database,
 ) -> None:

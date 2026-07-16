@@ -11,9 +11,11 @@ from uuid import UUID
 from personal_agent.application import (
     AgentRunResult,
     ConversationMessage,
+    OperationReceiptInspection,
     SessionInspection,
     TelegramActionAuthorization,
     TelegramActionTokenError,
+    render_operation_receipt,
 )
 from personal_agent.core.config import TelegramSettings
 from personal_agent.observability import get_logger
@@ -86,6 +88,18 @@ class TelegramRuntime(Protocol):
     ) -> tuple[ConversationMessage, ...]: ...
 
     async def clear_conversation_history(self, session_id: UUID) -> int: ...
+
+    async def active_workspace(self, session_id: UUID) -> str | None: ...
+
+    async def select_workspace(self, session_id: UUID, resource: str) -> str: ...
+
+    async def list_workspaces(self, session_id: UUID) -> tuple[str, ...]: ...
+
+    async def operation_receipt(
+        self,
+        session_id: UUID,
+        run_id: UUID | None = None,
+    ) -> OperationReceiptInspection | None: ...
 
 
 class TelegramBot:
@@ -192,6 +206,35 @@ class TelegramBot:
         if not text:
             await self._send_text(chat_id, "Send a text request or type /help.")
             return
+        receipt_view = self._natural_receipt_request(text)
+        if receipt_view is not None:
+            session_id = await self._runtime.telegram.get_or_create_session(
+                chat_id=chat_id,
+                user_id=user_id,
+            )
+            receipt = await self._runtime.operation_receipt(session_id)
+            await self._send_text(chat_id, render_operation_receipt(receipt, receipt_view))
+            return
+        if self._natural_created_file_request(text):
+            session_id = await self._runtime.telegram.get_or_create_session(
+                chat_id=chat_id,
+                user_id=user_id,
+            )
+            receipt = await self._runtime.operation_receipt(session_id)
+            changed = receipt.payload.get("changed_files", []) if receipt is not None else []
+            if not isinstance(changed, list) or len(changed) != 1:
+                choices = "\n".join(
+                    f"{index}. {path}" for index, path in enumerate(changed, start=1)
+                ) if isinstance(changed, list) else ""
+                await self._send_text(
+                    chat_id,
+                    "I could not identify exactly one OpenCode-created file."
+                    + (f" Choose one:\n{choices}" if choices else ""),
+                )
+                return
+            text = (
+                f"Read the file {changed[0]!r} from the current workspace and show its contents."
+            )
         if text.startswith("/"):
             await self._handle_command(text, chat_id=chat_id, user_id=user_id)
             return
@@ -223,7 +266,8 @@ class TelegramBot:
         if command in {"/start", "/help"}:
             await self._send_text(
                 chat_id,
-                "Commands: /help /status /session /history /clear /new\n"
+                "Commands: /help /status /session /history /clear /new /workspace "
+                "/workspaces /last-operation /operation\n"
                 "Send any other text to talk to the agent.",
             )
             return
@@ -245,6 +289,59 @@ class TelegramBot:
         elif command == "/clear":
             deleted = await self._runtime.clear_conversation_history(session_id)
             await self._send_text(chat_id, f"Cleared {deleted} conversation messages.")
+        elif command == "/workspace":
+            parts = text.split(maxsplit=1)
+            if len(parts) == 1:
+                workspace = await self._runtime.active_workspace(session_id)
+                await self._send_text(
+                    chat_id,
+                    f"Active workspace: {workspace or 'none'}",
+                )
+            else:
+                try:
+                    workspace = await self._runtime.select_workspace(session_id, parts[1])
+                except RuntimeError as error:
+                    await self._send_text(chat_id, f"Workspace selection failed: {error}")
+                else:
+                    await self._send_text(chat_id, f"Active workspace: {workspace}")
+        elif command == "/workspaces":
+            try:
+                workspaces = await self._runtime.list_workspaces(session_id)
+            except RuntimeError as error:
+                await self._send_text(chat_id, f"Workspace listing failed: {error}")
+                return
+            await self._send_text(
+                chat_id,
+                "Available workspaces:\n" + "\n".join(workspaces)
+                if workspaces
+                else "No configured workspaces exist.",
+            )
+        elif command in {"/last-operation", "/operation"}:
+            parts = text.split()
+            run_id: UUID | None = None
+            view = "summary"
+            if command == "/last-operation":
+                if len(parts) >= 2:
+                    view = parts[1].casefold()
+            else:
+                if len(parts) < 2:
+                    await self._send_text(chat_id, "Usage: /operation <run-id> [log|diff|tests]")
+                    return
+                try:
+                    run_id = UUID(parts[1])
+                except ValueError:
+                    await self._send_text(chat_id, "Operation run ID is invalid.")
+                    return
+                if len(parts) >= 3:
+                    view = parts[2].casefold()
+            try:
+                rendered = render_operation_receipt(
+                    await self._runtime.operation_receipt(session_id, run_id),
+                    view,
+                )
+            except ValueError as error:
+                rendered = str(error)
+            await self._send_text(chat_id, rendered)
         else:
             await self._send_text(chat_id, f"Unknown command: {command}. Type /help.")
 
@@ -498,3 +595,26 @@ class TelegramBot:
         if not history:
             return "No conversation history."
         return "\n\n".join(f"{message.role}> {message.content}" for message in history)
+
+    @staticmethod
+    def _natural_receipt_request(text: str) -> str | None:
+        normalized = " ".join(text.casefold().split()).rstrip("?.!")
+        if normalized in {
+            "show the last opencode output",
+            "show last opencode output",
+            "show the opencode operation log",
+            "show opencode operation log",
+        }:
+            return "log"
+        if normalized in {"show the last operation", "show last operation"}:
+            return "summary"
+        return None
+
+    @staticmethod
+    def _natural_created_file_request(text: str) -> bool:
+        normalized = " ".join(text.casefold().split()).rstrip("?.!")
+        return normalized in {
+            "show me the file opencode created",
+            "show the file opencode created",
+            "read the file opencode created",
+        }

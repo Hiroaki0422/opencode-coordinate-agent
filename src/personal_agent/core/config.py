@@ -149,6 +149,11 @@ class OpenCodeSettings(BaseModel):
     timeout_seconds: float = Field(default=900.0, gt=0)
     max_diff_chars: int = Field(default=20_000, ge=1_000)
     max_report_chars: int = Field(default=8_000, ge=500)
+    max_log_chars: int = Field(default=20_000, ge=1_000)
+    max_worker_events: int = Field(default=100, ge=1, le=1_000)
+    max_manifest_files: int = Field(default=10_000, ge=1)
+    max_manifest_file_bytes: int = Field(default=10_000_000, ge=1_024)
+    max_manifest_total_bytes: int = Field(default=100_000_000, ge=1_024)
 
 
 class CodexSubscriptionSettings(BaseModel):

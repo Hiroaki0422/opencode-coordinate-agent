@@ -187,7 +187,8 @@ Detach with `Ctrl+B`, then `D`; later inspect it with `tmux attach -t personal-a
 startup, restart, backup, and recovery use the [single-host VPS deployment](deployment.md) assets.
 
 Only updates matching both allowlists are accepted. `/help`, `/status`, `/session`, `/history`,
-`/clear`, and `/new` mirror the interactive CLI commands. Ordinary messages reuse one durable SQLite
+`/clear`, `/new`, `/workspace`, `/workspaces`, `/last-operation`, and `/operation` are handled
+directly by the authenticated transport. Ordinary messages reuse one durable SQLite
 conversation session. The bot shows `Planning…` while the workflow runs and replaces it with the final
 response or an approval card containing the tool, operation, resource, effect, risk, reason, and
 expiry.
@@ -197,6 +198,31 @@ only its SHA-256 digest, binds it to the exact chat, user, session, and run, and
 resuming the LangGraph checkpoint. Expired, reused, wrong-user, and wrong-chat callbacks fail closed.
 If a consumed approval cannot resume, the bot includes the run ID so it can be inspected through the
 CLI.
+
+Workspace selection is durable per session:
+
+```text
+/workspaces
+/workspace todo-test
+/workspace
+```
+
+After a tool attempt, inspect its bounded, redacted SQLite receipt without asking a model to infer
+what happened:
+
+```text
+/last-operation
+/last-operation log
+/operation RUN_ID
+/operation RUN_ID diff
+/operation RUN_ID tests
+```
+
+`Show the OpenCode operation log` retrieves the same sanitized receipt. Raw process and service logs
+remain administrator-only in journald. Receipts contain bounded worker events, reports, diffs, test
+exit codes, expected and observed files, and verification status; they exclude environment values and
+test stdout/stderr. No automatic receipt retention is currently configured, so normal SQLite backup
+and deletion policy applies.
 
 Run only one polling process for a bot token. Startup removes any configured webhook because Telegram
 does not deliver `getUpdates` while a webhook is active. Stop polling with `Ctrl+C`. To disable mobile
@@ -257,8 +283,20 @@ uv run personal-agent run \
   --session-id YOUR_SESSION_ID
 ```
 
-After that workflow completes, start a second request naming the returned path and describing the code
-task, expected files, acceptance criteria, and tests.
+After creation, that canonical path becomes the session's active workspace. Later requests may say
+`current workspace`; the runtime supplies the stored path as trusted context and canonicalizes the
+resource before policy and approval. OpenCode changes remain in place even when expected-file or test
+verification fails, and the response distinguishes observed effects from verified completion.
+
+Equivalent host CLI inspection commands are:
+
+```bash
+uv run personal-agent workspaces --session-id YOUR_SESSION_ID
+uv run personal-agent workspace --session-id YOUR_SESSION_ID --select notes-agent
+uv run personal-agent workspace --session-id YOUR_SESSION_ID
+uv run personal-agent operation --session-id YOUR_SESSION_ID
+uv run personal-agent operation --session-id YOUR_SESSION_ID --run-id RUN_ID --view log
+```
 
 ## Validate the Installation
 

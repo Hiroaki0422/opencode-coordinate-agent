@@ -34,10 +34,29 @@ def build_agent_graph(
             ConversationTurn.model_validate(item)
             for item in state.get("conversation_history", [])
         )
-        decision = await coordinator.decide(state["user_input"], history=history)
+        active_workspace = state.get("active_workspace")
+        if active_workspace is None:
+            decision = await coordinator.decide(state["user_input"], history=history)
+        else:
+            decision = await coordinator.decide(
+                state["user_input"],
+                history=history,
+                active_workspace=active_workspace,
+            )
+        action = decision.action
+        if action is not None and active_workspace is not None:
+            normalized_resource = action.resource.strip().casefold()
+            if normalized_resource in {
+                "current workspace",
+                "the current workspace",
+                "this workspace",
+                "workspace",
+                ".",
+            }:
+                action = action.model_copy(update={"resource": active_workspace})
         return {
             "decision_message": decision.message,
-            "action": decision.action.model_dump(mode="json") if decision.action else None,
+            "action": action.model_dump(mode="json") if action else None,
             "status": "planned",
         }
 

@@ -139,6 +139,7 @@ async def test_opencode_requires_verified_changes_and_passing_tests() -> None:
             "changed_files": ["app.py"],
             "tests": [{"command": ["pytest"], "exit_code": 0}],
             "report": "Implemented the change.",
+            "effect_observed": True,
             "requested_change_verified": True,
         },
         external_ids=["app.py"],
@@ -155,3 +156,80 @@ async def test_opencode_requires_verified_changes_and_passing_tests() -> None:
     assert verification.success is True
     assert "app.py" in verification.response
     assert "tests passed" in verification.response
+
+
+async def test_opencode_truthfully_reports_retained_partial_changes() -> None:
+    action = ActionRequest(
+        tool_name="opencode",
+        operation="code_task",
+        resource="/workspace/project",
+        risk_level=RiskLevel.RISKY,
+        summary="Create app",
+    )
+    result = ToolExecutionResult(
+        tool_name="opencode",
+        operation="code_task",
+        success=False,
+        data={
+            "changed_files": ["todo.py"],
+            "missing_expected_files": ["app.py", "README.md"],
+            "tests": [],
+            "report": "Created a minimal todo app.",
+            "effect_observed": True,
+            "requested_change_verified": False,
+            "verification_reason": "expected_files_missing",
+            "changes_retained": True,
+        },
+        external_ids=["todo.py"],
+        error="requested file changes could not be verified",
+    )
+
+    verification = await ResponseVerifier().verify(
+        user_input="Create app",
+        decision_message="Delegating.",
+        action=action,
+        result=result,
+        coordinator=FakeCoordinator([]),
+    )
+
+    assert verification.success is False
+    assert "todo.py" in verification.response
+    assert "app.py, README.md" in verification.response
+    assert "no rollback occurred" in verification.response
+
+
+async def test_opencode_provider_failure_with_changes_stays_failed() -> None:
+    action = ActionRequest(
+        tool_name="opencode",
+        operation="code_task",
+        resource="/workspace/project",
+        risk_level=RiskLevel.RISKY,
+        summary="Update app",
+    )
+    result = ToolExecutionResult(
+        tool_name="opencode",
+        operation="code_task",
+        success=False,
+        data={
+            "changed_files": ["app.py"],
+            "missing_expected_files": [],
+            "tests": [],
+            "effect_observed": True,
+            "requested_change_verified": True,
+            "verification_reason": "provider_error",
+            "changes_retained": True,
+        },
+        error="OpenCode exited with code 1",
+    )
+
+    verification = await ResponseVerifier().verify(
+        user_input="Update app",
+        decision_message="Delegating.",
+        action=action,
+        result=result,
+        coordinator=FakeCoordinator([]),
+    )
+
+    assert verification.success is False
+    assert "app.py" in verification.response
+    assert "provider operation failed" in verification.response

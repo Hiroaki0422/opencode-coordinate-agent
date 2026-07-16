@@ -108,6 +108,84 @@ class RunInspection:
         }
 
 
+@dataclass(frozen=True)
+class OperationReceiptInspection:
+    run_id: UUID
+    action_id: UUID
+    tool_name: str
+    operation: str
+    resource: str
+    success: bool
+    outcome: str
+    created_at: datetime
+    payload: dict[str, Any]
+
+    def as_dict(self) -> dict[str, Any]:
+        return {
+            "run_id": str(self.run_id),
+            "action_id": str(self.action_id),
+            "tool_name": self.tool_name,
+            "operation": self.operation,
+            "resource": self.resource,
+            "success": self.success,
+            "outcome": self.outcome,
+            "created_at": self.created_at.isoformat(),
+            "payload": self.payload,
+        }
+
+
+def render_operation_receipt(
+    receipt: OperationReceiptInspection | None,
+    view: str = "summary",
+) -> str:
+    if receipt is None:
+        return "No operation found for this session."
+    payload = receipt.payload
+    if view == "log":
+        events = payload.get("worker_events", [])
+        lines = [
+            f"#{event.get('sequence')} {event.get('type')}: {event.get('text')}"
+            for event in events
+            if isinstance(event, dict)
+        ] if isinstance(events, list) else []
+        stderr = str(payload.get("stderr_tail") or "").strip()
+        if stderr:
+            lines.append(f"stderr:\n{stderr}")
+        return "\n".join(lines) or "No sanitized worker log events were recorded."
+    if view == "diff":
+        return str(payload.get("diff") or payload.get("diff_summary") or "No diff recorded.")
+    if view == "tests":
+        tests = payload.get("tests", [])
+        if not isinstance(tests, list) or not tests:
+            return "No test results were recorded."
+        return "\n".join(
+            f"{test.get('exit_code')}: {' '.join(str(item) for item in test.get('command', []))}"
+            for test in tests
+            if isinstance(test, dict)
+        )
+    if view != "summary":
+        raise ValueError("operation view must be summary, log, diff, or tests")
+    changed = payload.get("changed_files") or payload.get("external_ids") or []
+    missing = payload.get("missing_expected_files") or []
+    lines = [
+        f"Run: {receipt.run_id}",
+        f"Outcome: {receipt.outcome}",
+        f"Tool: {receipt.tool_name}/{receipt.operation}",
+        f"Resource: {receipt.resource}",
+        f"Verification: {payload.get('verification_reason') or 'not applicable'}",
+        f"Changed files: {', '.join(str(item) for item in changed) or 'none'}",
+    ]
+    if missing:
+        lines.append(f"Missing expected files: {', '.join(str(item) for item in missing)}")
+    report = str(payload.get("report") or "").strip()
+    if report:
+        lines.append(f"Provider report:\n{report}")
+    error = str(payload.get("error") or "").strip()
+    if error:
+        lines.append(f"Error: {error}")
+    return "\n".join(lines)
+
+
 class AgentRuntime:
     """Execute durable agent operations independently of a transport."""
 
@@ -118,11 +196,13 @@ class AgentRuntime:
         database: Database,
         graph: CompiledAgentGraph | None,
         actor: str,
+        workspaces: WorkspaceService | None = None,
     ) -> None:
         self._settings = settings
         self._database = database
         self._graph = graph
         self._actor = actor
+        self._workspaces = workspaces
         self._logger = get_logger(__name__)
         self.telegram = TelegramStateService(
             database=database,
@@ -154,6 +234,7 @@ class AgentRuntime:
         graph = self._require_graph()
         active_session_id = session_id or await self.create_session()
         history = await self._load_conversation_context(active_session_id)
+        active_workspace = await self.active_workspace(active_session_id)
         run_id = await self._create_workflow_run(
             session_id=active_session_id,
             prompt=prompt,
@@ -165,6 +246,7 @@ class AgentRuntime:
             "conversation_history": [
                 turn.model_dump(mode="json") for turn in history
             ],
+            "active_workspace": active_workspace,
         }
         config = cast(Any, {"configurable": {"thread_id": str(run_id)}})
         started_at = time.monotonic()
@@ -276,6 +358,65 @@ class AgentRuntime:
                     )
                     for item in pending
                 ),
+            )
+
+    async def active_workspace(self, session_id: UUID) -> str | None:
+        async with self._database.unit_of_work() as unit_of_work:
+            if await unit_of_work.sessions.get(session_id) is None:
+                raise RecordNotFoundError(f"session {session_id} was not found")
+            workspace = await unit_of_work.session_workspaces.get(session_id)
+            return workspace.active_workspace if workspace is not None else None
+
+    async def select_workspace(self, session_id: UUID, resource: str) -> str:
+        workspaces = self._require_workspaces()
+        resolved = workspaces.resolve_workspace(resource)
+        async with self._database.unit_of_work() as unit_of_work:
+            if await unit_of_work.sessions.get(session_id) is None:
+                raise RecordNotFoundError(f"session {session_id} was not found")
+            await unit_of_work.session_workspaces.set(session_id, str(resolved))
+            await unit_of_work.audit.append(
+                event_type="session.workspace_selected",
+                actor=self._actor,
+                session_id=session_id,
+                payload={"active_workspace": str(resolved)},
+            )
+            await unit_of_work.commit()
+        return str(resolved)
+
+    async def list_workspaces(self, session_id: UUID) -> tuple[str, ...]:
+        async with self._database.unit_of_work() as unit_of_work:
+            if await unit_of_work.sessions.get(session_id) is None:
+                raise RecordNotFoundError(f"session {session_id} was not found")
+        return tuple(str(path) for path in self._require_workspaces().list_workspaces())
+
+    async def operation_receipt(
+        self,
+        session_id: UUID,
+        run_id: UUID | None = None,
+    ) -> OperationReceiptInspection | None:
+        async with self._database.unit_of_work() as unit_of_work:
+            if await unit_of_work.sessions.get(session_id) is None:
+                raise RecordNotFoundError(f"session {session_id} was not found")
+            receipt = (
+                await unit_of_work.operation_receipts.get_for_session(
+                    session_id=session_id,
+                    run_id=run_id,
+                )
+                if run_id is not None
+                else await unit_of_work.operation_receipts.latest_for_session(session_id)
+            )
+            if receipt is None:
+                return None
+            return OperationReceiptInspection(
+                run_id=UUID(receipt.run_id),
+                action_id=UUID(receipt.action_id),
+                tool_name=receipt.tool_name,
+                operation=receipt.operation,
+                resource=receipt.resource,
+                success=receipt.success,
+                outcome=receipt.outcome,
+                created_at=receipt.created_at,
+                payload=receipt.payload,
             )
 
     async def _create_workflow_run(self, *, session_id: UUID, prompt: str) -> UUID:
@@ -435,6 +576,11 @@ class AgentRuntime:
             raise RuntimeError("agent operations were not initialized for this runtime")
         return self._graph
 
+    def _require_workspaces(self) -> WorkspaceService:
+        if self._workspaces is None:
+            raise RuntimeError("local execution is not enabled")
+        return self._workspaces
+
     @staticmethod
     def _interrupt_values(result: dict[str, Any]) -> tuple[Any, ...]:
         interrupts = result.get("__interrupt__", ())
@@ -475,7 +621,22 @@ class AgentRuntime:
             return content
         return content[: MAX_CONVERSATION_MESSAGE_CHARS - len(marker)] + marker
 
-def _build_tool_gateway(settings: Settings, database: Database) -> ToolGateway:
+def _build_workspace_service(settings: Settings) -> WorkspaceService | None:
+    if not settings.local_execution.enabled:
+        return None
+    sandbox = DockerSandbox(settings.local_execution)
+    return WorkspaceService(
+        settings.local_execution.workspace_root,
+        sandbox,
+        settings.local_execution.repository_paths,
+    )
+
+
+def _build_tool_gateway(
+    settings: Settings,
+    database: Database,
+    workspaces: WorkspaceService | None,
+) -> ToolGateway:
     gateway = ToolGateway(database)
     if settings.research.enabled:
         gateway.register(build_research_tool(settings.research))
@@ -493,11 +654,8 @@ def _build_tool_gateway(settings: Settings, database: Database) -> ToolGateway:
         )
     if settings.local_execution.enabled:
         sandbox = DockerSandbox(settings.local_execution)
-        workspaces = WorkspaceService(
-            settings.local_execution.workspace_root,
-            sandbox,
-            settings.local_execution.repository_paths,
-        )
+        if workspaces is None:
+            raise ValueError("workspace service is not configured")
         gateway.register(LocalExecutionTool(sandbox, workspaces))
         if settings.opencode.enabled:
             if settings.deepseek.api_key is None:
@@ -525,6 +683,7 @@ async def open_agent_runtime(
     database = Database(settings.database_url)
     await database.initialize()
     gateway: ToolGateway | None = None
+    workspaces = _build_workspace_service(settings)
     try:
         if not initialize_agent:
             yield AgentRuntime(
@@ -532,12 +691,13 @@ async def open_agent_runtime(
                 database=database,
                 graph=None,
                 actor=actor,
+                workspaces=workspaces,
             )
             return
 
         coordinator = build_coordinator(settings)
         await health_check_coordinator(coordinator)
-        gateway = _build_tool_gateway(settings, database)
+        gateway = _build_tool_gateway(settings, database, workspaces)
         policy = PolicyService(database, settings.policy)
         verifier = ResponseVerifier()
         async with open_agent_graph(
@@ -552,6 +712,7 @@ async def open_agent_runtime(
                 database=database,
                 graph=graph,
                 actor=actor,
+                workspaces=workspaces,
             )
     finally:
         if gateway is not None:

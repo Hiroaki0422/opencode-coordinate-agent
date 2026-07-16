@@ -4,10 +4,12 @@ from __future__ import annotations
 
 import hashlib
 import json
-from pathlib import Path
+import os
+import re
+from pathlib import Path, PurePosixPath
 from typing import Any
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from personal_agent.core.config import OpenCodeSettings
 from personal_agent.core.types import ActionRequest, RiskLevel
@@ -20,6 +22,12 @@ from personal_agent.execution.docker import (
 from personal_agent.execution.workspace import WorkspaceService
 from personal_agent.tools.contracts import ToolEvidence, ToolExecutionResult
 
+_SENSITIVE_VALUE_PATTERN = re.compile(
+    r"(?i)\b(api[_-]?key|authorization|password|secret|token)\s*[:=]\s*"
+    r"(?:bearer\s+)?[^\s,;\"']+"
+)
+_BEARER_PATTERN = re.compile(r"(?i)\bbearer\s+[A-Za-z0-9._~+/=-]+")
+
 
 class CodingTaskContract(BaseModel):
     """Structured task sent to the coding worker."""
@@ -28,6 +36,17 @@ class CodingTaskContract(BaseModel):
     acceptance_criteria: list[str] = Field(default_factory=list, max_length=20)
     expected_files: list[str] = Field(default_factory=list, max_length=50)
     test_commands: list[list[str]] = Field(default_factory=list, max_length=10)
+
+    @field_validator("expected_files")
+    @classmethod
+    def validate_expected_files(cls, values: list[str]) -> list[str]:
+        normalized: list[str] = []
+        for value in values:
+            path = PurePosixPath(value)
+            if path.is_absolute() or ".." in path.parts or path == PurePosixPath("."):
+                raise ValueError("expected files must be relative workspace paths")
+            normalized.append(path.as_posix())
+        return normalized
 
 
 class CodingCommandResult(BaseModel):
@@ -48,8 +67,17 @@ class CodingEvidence(BaseModel):
     diff: str
     tests: list[CodingCommandResult]
     report: str
+    worker_events: list[dict[str, Any]]
+    stdout_tail: str
+    stderr_tail: str
     baseline_dirty: bool
+    expected_files: list[str]
+    missing_expected_files: list[str]
+    effect_observed: bool
     requested_change_verified: bool
+    tests_passed: bool
+    verification_reason: str
+    changes_retained: bool
 
 
 class OpenCodeTool:
@@ -96,6 +124,7 @@ class OpenCodeTool:
         for command in contract.test_commands:
             self._validate_test_command(command)
 
+        before_manifest = self._workspace_manifest(workspace)
         before_status = await self._git(workspace, ["status", "--porcelain=v1"])
         before_diff = await self._git(workspace, ["diff", "--no-ext-diff", "HEAD"])
         command_audits = [
@@ -128,15 +157,8 @@ class OpenCodeTool:
             )
         )
         report = self._extract_report(opencode_result.stdout)
-        if opencode_result.exit_code != 0:
-            return self._failed_result(
-                action,
-                opencode_result,
-                report=report,
-                error=f"OpenCode exited with code {opencode_result.exit_code}",
-                command_audits=command_audits,
-            )
-
+        worker_events = self._worker_events(opencode_result.stdout)
+        after_manifest = self._workspace_manifest(workspace)
         after_status = await self._git(workspace, ["status", "--porcelain=v1"])
         after_diff = await self._git(workspace, ["diff", "--no-ext-diff", "HEAD"])
         diff_summary = await self._git(workspace, ["diff", "--stat", "HEAD"])
@@ -149,15 +171,14 @@ class OpenCodeTool:
                 self._command_audit(["git", "diff", "--stat", "HEAD"], diff_summary),
             ]
         )
-        changed_files = self._parse_changed_files(after_status.stdout)
-        changed = self._snapshot_digest(before_status, before_diff) != self._snapshot_digest(
-            after_status, after_diff
-        )
+        changed_files = self._changed_manifest_paths(before_manifest, after_manifest)
+        effect_observed = bool(changed_files)
         expected = set(contract.expected_files)
-        requested_change_verified = changed and expected.issubset(changed_files)
+        missing_expected_files = sorted(expected.difference(changed_files))
+        requested_change_verified = effect_observed and not missing_expected_files
 
         tests: list[CodingCommandResult] = []
-        for command in contract.test_commands:
+        for command in contract.test_commands if opencode_result.exit_code == 0 else []:
             test_result = await self._sandbox.run(
                 workspace=workspace,
                 command=command,
@@ -167,6 +188,16 @@ class OpenCodeTool:
             tests.append(self._command_result(command, test_result))
             command_audits.append(self._command_audit(command, test_result))
         tests_passed = all(test.exit_code == 0 for test in tests)
+        if opencode_result.exit_code != 0:
+            verification_reason = "provider_error"
+        elif not effect_observed:
+            verification_reason = "no_changes"
+        elif missing_expected_files:
+            verification_reason = "expected_files_missing"
+        elif not tests_passed:
+            verification_reason = "tests_failed"
+        else:
+            verification_reason = "verified"
         evidence = CodingEvidence(
             workspace=str(workspace),
             model=self._settings.model,
@@ -175,12 +206,27 @@ class OpenCodeTool:
             diff=after_diff.stdout[: self._settings.max_diff_chars],
             tests=tests,
             report=report,
+            worker_events=worker_events,
+            stdout_tail=self._bounded_redacted(opencode_result.stdout),
+            stderr_tail=self._bounded_redacted(opencode_result.stderr),
             baseline_dirty=bool(before_status.stdout.strip()),
+            expected_files=contract.expected_files,
+            missing_expected_files=missing_expected_files,
+            effect_observed=effect_observed,
             requested_change_verified=requested_change_verified,
+            tests_passed=tests_passed,
+            verification_reason=verification_reason,
+            changes_retained=effect_observed,
         )
-        success = requested_change_verified and tests_passed
+        success = (
+            opencode_result.exit_code == 0
+            and requested_change_verified
+            and tests_passed
+        )
         error: str | None = None
-        if not requested_change_verified:
+        if opencode_result.exit_code != 0:
+            error = f"OpenCode exited with code {opencode_result.exit_code}"
+        elif not requested_change_verified:
             error = "requested file changes could not be verified"
         elif not tests_passed:
             error = "one or more requested test commands failed"
@@ -270,7 +316,37 @@ class OpenCodeTool:
                 continue
             self._collect_text(payload, candidates)
         report = candidates[-1] if candidates else output
-        return report[-self._settings.max_report_chars :]
+        return self._redact(report)[-self._settings.max_report_chars :]
+
+    def _worker_events(self, output: str) -> list[dict[str, Any]]:
+        events: list[dict[str, Any]] = []
+        for line in output.splitlines():
+            try:
+                payload = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            candidates: list[str] = []
+            self._collect_text(payload, candidates)
+            event_type = payload.get("type", "event") if isinstance(payload, dict) else "event"
+            text = candidates[-1] if candidates else ""
+            events.append(
+                {
+                    "sequence": len(events) + 1,
+                    "type": str(event_type)[:100],
+                    "text": self._redact(text)[:1_000],
+                }
+            )
+            if len(events) >= self._settings.max_worker_events:
+                break
+        return events
+
+    def _bounded_redacted(self, value: str) -> str:
+        return self._redact(value)[-self._settings.max_log_chars :]
+
+    def _redact(self, value: str) -> str:
+        redacted = value.replace(self._api_key, "[REDACTED]") if self._api_key else value
+        redacted = _SENSITIVE_VALUE_PATTERN.sub(r"\1=[REDACTED]", redacted)
+        return _BEARER_PATTERN.sub("[REDACTED]", redacted)
 
     @classmethod
     def _collect_text(cls, value: object, candidates: list[str]) -> None:
@@ -296,9 +372,53 @@ class OpenCodeTool:
             changed.add(path.strip('"'))
         return changed
 
+    def _workspace_manifest(self, workspace: Path) -> dict[str, tuple[int, str]]:
+        root = workspace.resolve(strict=True)
+        manifest: dict[str, tuple[int, str]] = {}
+        total_bytes = 0
+        for directory, directory_names, file_names in os.walk(root, followlinks=False):
+            relative_directory = Path(directory).relative_to(root)
+            directory_names[:] = [name for name in directory_names if name != ".git"]
+            for name in [*directory_names, *file_names]:
+                candidate = Path(directory, name)
+                if not candidate.is_symlink():
+                    continue
+                if not candidate.resolve(strict=True).is_relative_to(root):
+                    raise ValueError("workspace manifest rejected a symlink escape")
+            for name in file_names:
+                candidate = Path(directory, name)
+                if candidate.is_symlink() or not candidate.is_file():
+                    continue
+                size = candidate.stat().st_size
+                if size > self._settings.max_manifest_file_bytes:
+                    raise ValueError("workspace manifest file-size limit exceeded")
+                total_bytes += size
+                if total_bytes > self._settings.max_manifest_total_bytes:
+                    raise ValueError("workspace manifest total-size limit exceeded")
+                relative_path = (relative_directory / name).as_posix()
+                manifest[relative_path] = (size, self._file_digest(candidate))
+                if len(manifest) > self._settings.max_manifest_files:
+                    raise ValueError("workspace manifest file-count limit exceeded")
+        return manifest
+
     @staticmethod
-    def _snapshot_digest(status: SandboxResult, diff: SandboxResult) -> str:
-        return hashlib.sha256(f"{status.stdout}\0{diff.stdout}".encode()).hexdigest()
+    def _file_digest(path: Path) -> str:
+        digest = hashlib.sha256()
+        with path.open("rb") as handle:
+            for chunk in iter(lambda: handle.read(128 * 1_024), b""):
+                digest.update(chunk)
+        return digest.hexdigest()
+
+    @staticmethod
+    def _changed_manifest_paths(
+        before: dict[str, tuple[int, str]],
+        after: dict[str, tuple[int, str]],
+    ) -> set[str]:
+        return {
+            path
+            for path in before.keys() | after.keys()
+            if before.get(path) != after.get(path)
+        }
 
     @staticmethod
     def _validate_test_command(command: list[str]) -> None:
@@ -346,21 +466,3 @@ class OpenCodeTool:
             "network_enabled": result.network_enabled,
             "output_truncated": result.output_truncated,
         }
-
-    def _failed_result(
-        self,
-        action: ActionRequest,
-        result: SandboxResult,
-        *,
-        report: str,
-        error: str,
-        command_audits: list[dict[str, Any]],
-    ) -> ToolExecutionResult:
-        return ToolExecutionResult(
-            tool_name=self.name,
-            operation=action.operation,
-            success=False,
-            data={"report": report, "stdout": result.stdout, "stderr": result.stderr},
-            audit_data={"commands": command_audits},
-            error=error,
-        )

@@ -275,6 +275,16 @@ fast-forward merge, reinstalls locked dependencies and the unit, rebuilds the sa
 the service. Database migrations run during application startup. The previous Git revision is stored
 at `/var/lib/personal-agent/previous-deployed-revision`.
 
+The active-workspace and operation-receipt release adds SQLite migration 4. No environment-file
+change is required; the existing workspace root remains authoritative. After upgrading, verify the
+new authenticated commands through Telegram:
+
+```text
+/workspace
+/workspaces
+/last-operation
+```
+
 Review after every upgrade:
 
 ```bash

@@ -41,6 +41,22 @@ class WorkspaceService:
             raise SandboxExecutionError("workspace is outside the configured workspace root")
         return resolved
 
+    def list_workspaces(self) -> tuple[Path, ...]:
+        root = self._root.resolve()
+        discovered: set[Path] = set()
+        if root.is_dir():
+            discovered.update(
+                path.resolve()
+                for path in root.iterdir()
+                if path.is_dir() and not path.is_symlink()
+            )
+        discovered.update(
+            path.resolve()
+            for path in self._repository_paths
+            if path.is_dir() and not path.is_symlink()
+        )
+        return tuple(sorted(discovered, key=str))
+
     def container_path(self, workspace: Path, relative_path: str, *, writing: bool) -> str:
         path = PurePosixPath(relative_path)
         if path.is_absolute() or ".." in path.parts or path == PurePosixPath("."):

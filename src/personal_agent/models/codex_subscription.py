@@ -73,8 +73,13 @@ class CodexSubscriptionCoordinator:
         user_input: str,
         *,
         history: Sequence[ConversationTurn] = (),
+        active_workspace: str | None = None,
     ) -> CoordinatorDecision:
-        request = render_conversation_request(user_input, history)
+        request = render_conversation_request(
+            user_input,
+            history,
+            active_workspace=active_workspace,
+        )
         prompt = (
             f"{COORDINATOR_INSTRUCTIONS}\n\n"
             "Act only as a reasoning provider. Do not inspect files, run commands, call tools, or "

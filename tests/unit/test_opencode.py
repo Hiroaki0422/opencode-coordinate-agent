@@ -1,5 +1,6 @@
 """Tests for sandboxed OpenCode delegation and coding evidence."""
 
+from collections.abc import Callable
 from pathlib import Path
 from typing import cast
 
@@ -30,12 +31,20 @@ def sandbox_result(
 
 
 class QueueSandbox:
-    def __init__(self, results: list[SandboxResult]) -> None:
+    def __init__(
+        self,
+        results: list[SandboxResult],
+        mutations: dict[int, Callable[[], None]] | None = None,
+    ) -> None:
         self.results = results
         self.calls: list[dict[str, object]] = []
+        self.mutations = mutations or {}
 
     async def run(self, **arguments: object) -> SandboxResult:
         self.calls.append(arguments)
+        mutation = self.mutations.get(len(self.calls) - 1)
+        if mutation is not None:
+            mutation()
         return self.results.pop(0)
 
     async def health_check(self) -> None:
@@ -96,7 +105,8 @@ async def test_opencode_captures_changes_tests_and_report(tmp_path: Path) -> Non
             sandbox_result(stdout="diff --git a/app.py b/app.py\n"),
             sandbox_result(stdout=" app.py | 2 +-\n"),
             sandbox_result(stdout="1 passed\n"),
-        ]
+        ],
+        mutations={2: lambda: (repo / "app.py").write_text("hello\n")},
     )
     tool = build_tool(root, repo, sandbox)
 
@@ -130,7 +140,8 @@ async def test_opencode_reports_failed_tests_without_success_claim(tmp_path: Pat
             sandbox_result(stdout="diff"),
             sandbox_result(stdout="app.py | 1 +"),
             sandbox_result(exit_code=1, stderr="failed"),
-        ]
+        ],
+        mutations={2: lambda: (repo / "app.py").write_text("hello\n")},
     )
 
     result = await build_tool(root, repo, sandbox).execute(action(repo))
@@ -199,10 +210,85 @@ async def test_opencode_fails_when_expected_file_was_not_changed(tmp_path: Path)
             sandbox_result(stdout="diff"),
             sandbox_result(stdout="README.md | 1 +"),
             sandbox_result(stdout="1 passed"),
-        ]
+        ],
+        mutations={2: lambda: (repo / "README.md").write_text("docs\n")},
     )
 
     result = await build_tool(root, repo, sandbox).execute(action(repo))
 
     assert result.success is False
     assert result.error == "requested file changes could not be verified"
+    assert result.data["effect_observed"] is True
+    assert result.data["changed_files"] == ["README.md"]
+    assert result.data["missing_expected_files"] == ["app.py"]
+    assert result.data["verification_reason"] == "expected_files_missing"
+    assert result.data["changes_retained"] is True
+
+
+async def test_opencode_detects_content_edit_to_existing_untracked_file(
+    tmp_path: Path,
+) -> None:
+    root, repo = repository(tmp_path)
+    (repo / "app.py").write_text("before\n")
+    sandbox = QueueSandbox(
+        [
+            sandbox_result(stdout="?? app.py\n"),
+            sandbox_result(exit_code=128),
+            sandbox_result(stdout='{"content":"Updated file"}\n', network_enabled=True),
+            sandbox_result(stdout="?? app.py\n"),
+            sandbox_result(exit_code=128),
+            sandbox_result(exit_code=128),
+            sandbox_result(stdout="1 passed"),
+        ],
+        mutations={2: lambda: (repo / "app.py").write_text("after\n")},
+    )
+
+    result = await build_tool(root, repo, sandbox).execute(action(repo))
+
+    assert result.success is True
+    assert result.data["changed_files"] == ["app.py"]
+    assert result.data["verification_reason"] == "verified"
+
+
+async def test_opencode_rejects_workspace_symlink_escape(tmp_path: Path) -> None:
+    root, repo = repository(tmp_path)
+    outside = tmp_path / "secret.txt"
+    outside.write_text("secret")
+    (repo / "escape.txt").symlink_to(outside)
+
+    result = await build_tool(root, repo, QueueSandbox([])).execute(action(repo))
+
+    assert result.success is False
+    assert "symlink escape" in (result.error or "")
+
+
+async def test_opencode_enforces_manifest_file_count_limit(tmp_path: Path) -> None:
+    root, repo = repository(tmp_path)
+    (repo / "one.txt").write_text("one")
+    (repo / "two.txt").write_text("two")
+    sandbox = QueueSandbox([])
+    tool = OpenCodeTool(
+        settings=OpenCodeSettings(enabled=True, max_manifest_files=1),
+        api_key="secret",
+        sandbox=cast(DockerSandbox, sandbox),
+        workspaces=WorkspaceService(root, cast(DockerSandbox, sandbox)),
+    )
+
+    result = await tool.execute(action(repo))
+
+    assert result.success is False
+    assert "file-count limit" in (result.error or "")
+    assert sandbox.calls == []
+
+
+def test_opencode_redacts_credentials_from_receipt_evidence(tmp_path: Path) -> None:
+    root, repo = repository(tmp_path)
+    tool = build_tool(root, repo, QueueSandbox([]))
+
+    redacted = tool._bounded_redacted(  # noqa: SLF001
+        "authorization: Bearer abc123 token=secret-value deepseek-secret"
+    )
+
+    assert "abc123" not in redacted
+    assert "secret-value" not in redacted
+    assert "deepseek-secret" not in redacted

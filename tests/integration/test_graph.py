@@ -18,7 +18,10 @@ from personal_agent.models import (
     GroundedResponse,
 )
 from personal_agent.persistence import Database
-from personal_agent.persistence.models import AuditEventModel, utc_now
+from personal_agent.persistence.models import (
+    AuditEventModel,
+    utc_now,
+)
 from personal_agent.policy import PolicyService
 from personal_agent.tools import (
     ResponseVerifier,
@@ -39,10 +42,12 @@ class FakeCoordinator:
         user_input: str,
         *,
         history: Any = (),
+        active_workspace: str | None = None,
     ) -> CoordinatorDecision:
         del user_input
         self.calls += 1
         self.histories.append(history)
+        self.active_workspace = active_workspace
         return self.decision
 
     async def compose(
@@ -76,6 +81,36 @@ class FakeTodoistTool:
             external_ids=["task-123"],
             evidence=[ToolEvidence(kind="todoist_task", identifier="task-123")],
             audit_data=self.audit_data,
+        )
+
+    async def aclose(self) -> None:
+        return None
+
+
+class PartialOpenCodeTool:
+    name = "opencode"
+
+    async def execute(self, action: ActionRequest) -> ToolExecutionResult:
+        return ToolExecutionResult(
+            tool_name=self.name,
+            operation=action.operation,
+            success=False,
+            data={
+                "workspace": action.resource,
+                "changed_files": ["todo.py"],
+                "expected_files": ["app.py"],
+                "missing_expected_files": ["app.py"],
+                "effect_observed": True,
+                "requested_change_verified": False,
+                "verification_reason": "expected_files_missing",
+                "changes_retained": True,
+                "worker_events": [
+                    {"sequence": 1, "type": "text", "text": "Created todo.py"}
+                ],
+                "tests": [],
+            },
+            external_ids=["todo.py"],
+            error="requested file changes could not be verified",
         )
 
     async def aclose(self) -> None:
@@ -145,6 +180,46 @@ async def test_graph_passes_normalized_history_to_coordinator(
     assert [turn.model_dump() for turn in coordinator.histories[0]] == [
         {"user": "Update app.py", "assistant": "I updated app.py."}
     ]
+
+
+async def test_graph_canonicalizes_current_workspace_before_policy(
+    database: Database,
+    tmp_path: Path,
+) -> None:
+    session_id = await create_session(database)
+    run_id = str(uuid4())
+    workspace = str(tmp_path / "todo-test")
+    coordinator = FakeCoordinator(
+        CoordinatorDecision(
+            message="I will inspect it.",
+            action=ActionRequest(
+                tool_name="local_execution",
+                operation="list_files",
+                resource="current workspace",
+                risk_level=RiskLevel.READ,
+                summary="List files",
+            ),
+        )
+    )
+    state: AgentState = {
+        "session_id": session_id,
+        "run_id": run_id,
+        "user_input": "List files in the current workspace",
+        "active_workspace": workspace,
+    }
+
+    async with open_agent_graph(
+        checkpoint_path=tmp_path / "active-workspace.sqlite3",
+        coordinator=coordinator,
+        policy=PolicyService(database, PolicySettings()),
+    ) as graph:
+        result = await graph.ainvoke(
+            state,
+            config=cast(Any, {"configurable": {"thread_id": run_id}}),
+        )
+
+    assert coordinator.active_workspace == workspace
+    assert result["action"]["resource"] == workspace
 
 
 async def test_graph_resumes_approval_from_durable_checkpoint(
@@ -360,6 +435,46 @@ async def test_gateway_persists_adapter_audit_metadata(database: Database) -> No
     assert payload is not None
     assert payload["adapter"]["command"] == ["example"]
     assert payload["adapter"]["stdout_digest"] == "digest"
+
+
+async def test_gateway_persists_partial_receipt_and_active_workspace(
+    database: Database,
+    tmp_path: Path,
+) -> None:
+    session_id = UUID(await create_session(database))
+    run_id = uuid4()
+    workspace = tmp_path / "todo-test"
+    workspace.mkdir()
+    gateway = ToolGateway(database)
+    gateway.register(PartialOpenCodeTool())
+    action = ActionRequest(
+        tool_name="opencode",
+        operation="code_task",
+        resource=str(workspace),
+        risk_level=RiskLevel.RISKY,
+        summary="Create todo app",
+    )
+
+    await gateway.execute(session_id=session_id, run_id=run_id, action=action)
+
+    async with database.unit_of_work() as unit_of_work:
+        receipt = await unit_of_work.operation_receipts.get_for_session(
+            session_id=session_id,
+            run_id=run_id,
+        )
+        active = await unit_of_work.session_workspaces.get(session_id)
+        receipt_snapshot = (
+            receipt.outcome if receipt is not None else None,
+            receipt.payload if receipt is not None else None,
+        )
+        active_workspace = active.active_workspace if active is not None else None
+
+    assert receipt is not None
+    assert active is not None
+    assert receipt_snapshot[0] == "partial"
+    assert receipt_snapshot[1]["changed_files"] == ["todo.py"]
+    assert receipt_snapshot[1]["worker_events"][0]["text"] == "Created todo.py"
+    assert active_workspace == str(workspace)
 
 
 async def test_duplicate_resume_does_not_repeat_external_mutation(

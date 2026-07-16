@@ -10,7 +10,7 @@ from uuid import UUID
 
 import typer
 
-from personal_agent.application import open_agent_runtime
+from personal_agent.application import open_agent_runtime, render_operation_receipt
 from personal_agent.cli.chat import ConsoleTerminal, InteractiveChat
 from personal_agent.core.config import Settings, get_settings
 from personal_agent.models import CodexCliRunner
@@ -185,6 +185,77 @@ def inspect_run(run_id: UUID) -> None:
             raise typer.BadParameter(str(error)) from error
 
     typer.echo(_run_async(execute()))
+
+
+@app.command("operation")
+def inspect_operation(
+    session_id: UUID = typer.Option(..., help="Owning agent session."),
+    run_id: UUID | None = typer.Option(None, help="Run to inspect; latest when omitted."),
+    view: str = typer.Option("summary", help="summary, log, diff, or tests."),
+) -> None:
+    """Inspect a sanitized, session-scoped tool operation receipt."""
+
+    async def execute() -> str:
+        settings = _settings()
+        async with open_agent_runtime(
+            settings,
+            actor="cli",
+            initialize_agent=False,
+        ) as runtime:
+            receipt = await runtime.operation_receipt(session_id, run_id)
+            return render_operation_receipt(receipt, view.casefold())
+
+    try:
+        typer.echo(_run_async(execute()))
+    except (RecordNotFoundError, ValueError) as error:
+        raise typer.BadParameter(str(error)) from error
+
+
+@app.command("workspace")
+def workspace(
+    session_id: UUID = typer.Option(..., help="Owning agent session."),
+    select: str | None = typer.Option(None, help="Workspace name or canonical path to select."),
+) -> None:
+    """Show or select the session's active workspace."""
+
+    async def execute() -> str:
+        settings = _settings()
+        async with open_agent_runtime(
+            settings,
+            actor="cli",
+            initialize_agent=False,
+        ) as runtime:
+            active = (
+                await runtime.select_workspace(session_id, select)
+                if select is not None
+                else await runtime.active_workspace(session_id)
+            )
+            return active or "No active workspace."
+
+    try:
+        typer.echo(_run_async(execute()))
+    except (RecordNotFoundError, RuntimeError, ValueError) as error:
+        raise typer.BadParameter(str(error)) from error
+
+
+@app.command("workspaces")
+def workspaces(session_id: UUID = typer.Option(..., help="Owning agent session.")) -> None:
+    """List selectable local workspaces."""
+
+    async def execute() -> str:
+        settings = _settings()
+        async with open_agent_runtime(
+            settings,
+            actor="cli",
+            initialize_agent=False,
+        ) as runtime:
+            available = await runtime.list_workspaces(session_id)
+            return "\n".join(available) if available else "No configured workspaces exist."
+
+    try:
+        typer.echo(_run_async(execute()))
+    except (RecordNotFoundError, RuntimeError, ValueError) as error:
+        raise typer.BadParameter(str(error)) from error
 
 
 def main() -> None:

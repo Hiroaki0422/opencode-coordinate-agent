@@ -84,7 +84,9 @@ class LocalExecutionTool:
                 command=["find", ".", "-maxdepth", "3", "-type", "f", "-print"],
                 writable=False,
             )
-            return self._result(action, result, command=["find", ".", "-maxdepth", "3"])
+            return self._result(
+                action, result, workspace=workspace, command=["find", ".", "-maxdepth", "3"]
+            )
         if action.operation == "read_file":
             self._require_risk(action, RiskLevel.READ)
             relative_path = str(action.arguments.get("path", ""))
@@ -97,7 +99,7 @@ class LocalExecutionTool:
                 command=command,
                 writable=False,
             )
-            return self._result(action, result, command=command)
+            return self._result(action, result, workspace=workspace, command=command)
         if action.operation == "write_file":
             self._require_at_least_write(action)
             write = WriteFileArguments.model_validate(action.arguments)
@@ -129,7 +131,7 @@ class LocalExecutionTool:
                 writable=True,
                 stdin=content,
             )
-            return self._result(action, result, command=command)
+            return self._result(action, result, workspace=workspace, command=command)
         if action.operation == "run_command":
             self._require_risk(action, RiskLevel.RISKY)
             arguments = ShellArguments.model_validate(action.arguments)
@@ -139,7 +141,9 @@ class LocalExecutionTool:
                 writable=True,
                 network_enabled=arguments.network,
             )
-            return self._result(action, result, command=arguments.command)
+            return self._result(
+                action, result, workspace=workspace, command=arguments.command
+            )
         raise ValueError(f"unsupported local execution operation {action.operation!r}")
 
     @staticmethod
@@ -157,6 +161,7 @@ class LocalExecutionTool:
         action: ActionRequest,
         result: SandboxResult,
         *,
+        workspace: Any,
         command: list[str],
     ) -> ToolExecutionResult:
         command_digest = hashlib.sha256("\0".join(command).encode()).hexdigest()
@@ -174,6 +179,7 @@ class LocalExecutionTool:
             operation=action.operation,
             success=result.exit_code == 0,
             data={
+                "workspace": str(workspace),
                 "stdout": result.stdout,
                 "stderr": result.stderr,
                 "exit_code": result.exit_code,

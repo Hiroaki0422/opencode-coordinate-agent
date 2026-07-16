@@ -30,6 +30,8 @@ class ResponseVerifier:
         coordinator: Coordinator,
         history: Sequence[ConversationTurn] = (),
     ) -> VerificationResult:
+        if action.tool_name == "opencode":
+            return self._verify_opencode(decision_message, result)
         if not result.success:
             return VerificationResult(
                 success=False,
@@ -49,8 +51,6 @@ class ResponseVerifier:
             )
         if action.tool_name == "local_execution":
             return self._verify_local_execution(decision_message, action, result)
-        if action.tool_name == "opencode":
-            return self._verify_opencode(decision_message, result)
         return VerificationResult(
             success=True,
             response=f"{decision_message}\n\nTool result verified.",
@@ -94,19 +94,55 @@ class ResponseVerifier:
         tests = result.data.get("tests")
         report = result.data.get("report")
         verified = result.data.get("requested_change_verified")
-        if not isinstance(changed_files, list) or not changed_files or verified is not True:
+        effect_observed = result.data.get("effect_observed") is True
+        missing = result.data.get("missing_expected_files", [])
+        reason = result.data.get("verification_reason")
+        if not effect_observed:
             return VerificationResult(
                 success=False,
-                response="OpenCode returned no verified requested file changes.",
+                response=(
+                    f"{decision_message}\n\nThe OpenCode action failed: "
+                    f"{result.error or reason or 'no file changes were observed'}."
+                ),
+            )
+        files = (
+            ", ".join(str(path) for path in changed_files)
+            if isinstance(changed_files, list)
+            else "unknown files"
+        )
+        retained = " The observed changes remain in the workspace; no rollback occurred."
+        if reason == "provider_error":
+            return VerificationResult(
+                success=False,
+                response=(
+                    f"{decision_message}\n\nOpenCode created or changed: {files}, but the "
+                    f"provider operation failed: {result.error or 'unknown error'}.{retained}"
+                ),
+            )
+        if verified is not True:
+            expected = (
+                ", ".join(str(path) for path in missing)
+                if isinstance(missing, list)
+                else "unknown"
+            )
+            return VerificationResult(
+                success=False,
+                response=(
+                    f"{decision_message}\n\nOpenCode created or changed: {files}. "
+                    f"The request was not verified because expected files were not observed: "
+                    f"{expected}.{retained}"
+                ),
             )
         if not isinstance(tests, list) or any(
             not isinstance(test, dict) or test.get("exit_code") != 0 for test in tests
         ):
             return VerificationResult(
                 success=False,
-                response="OpenCode changes were produced, but requested tests did not pass.",
+                response=(
+                    f"OpenCode created or changed: {files}, but requested tests did not pass."
+                    f"{retained}"
+                ),
             )
-        files = ", ".join(str(path) for path in changed_files)
         return VerificationResult(
             success=True,
             response=(

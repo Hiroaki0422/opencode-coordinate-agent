@@ -6,6 +6,7 @@ from uuid import UUID, uuid4
 from personal_agent.application import (
     AgentRunResult,
     ConversationMessage,
+    OperationReceiptInspection,
     SessionInspection,
     TelegramActionAuthorization,
 )
@@ -85,6 +86,25 @@ class FakeRuntime:
         self.results = results
         self.submit_calls: list[tuple[str, UUID | None]] = []
         self.resume_calls: list[tuple[UUID, bool]] = []
+        self.active = "/workspaces/todo-test"
+        self.available = ("/workspaces/todo-test", "/workspaces/other")
+        self.receipt = OperationReceiptInspection(
+            run_id=RUN_ID,
+            action_id=uuid4(),
+            tool_name="opencode",
+            operation="code_task",
+            resource=self.active,
+            success=False,
+            outcome="partial",
+            created_at=datetime.now(UTC),
+            payload={
+                "changed_files": ["todo.py"],
+                "verification_reason": "expected_files_missing",
+                "worker_events": [
+                    {"sequence": 1, "type": "text", "text": "Created todo.py"}
+                ],
+            },
+        )
 
     async def submit(self, prompt: str, *, session_id: UUID | None = None) -> AgentRunResult:
         self.submit_calls.append((prompt, session_id))
@@ -113,6 +133,27 @@ class FakeRuntime:
     async def clear_conversation_history(self, session_id: UUID) -> int:
         del session_id
         return 0
+
+    async def active_workspace(self, session_id: UUID) -> str | None:
+        del session_id
+        return self.active
+
+    async def select_workspace(self, session_id: UUID, resource: str) -> str:
+        del session_id
+        self.active = f"/workspaces/{resource}"
+        return self.active
+
+    async def list_workspaces(self, session_id: UUID) -> tuple[str, ...]:
+        del session_id
+        return self.available
+
+    async def operation_receipt(
+        self,
+        session_id: UUID,
+        run_id: UUID | None = None,
+    ) -> OperationReceiptInspection | None:
+        del session_id
+        return self.receipt if run_id in {None, RUN_ID} else None
 
 
 class FakeClient:
@@ -260,3 +301,73 @@ async def test_approval_renders_details_and_callback_resumes_once() -> None:
     assert runtime.resume_calls == [(RUN_ID, True)]
     assert client.answered[-1]["text"] == "Approved"
     assert client.edited[-1]["text"] == "Tests passed"
+
+
+async def test_workspace_and_operation_commands_are_session_scoped() -> None:
+    runtime = FakeRuntime([])
+    client = FakeClient()
+    bot = TelegramBot(settings=settings(), runtime=runtime, client=client)
+
+    await bot.process_update(message_update(update_id=20, text="/workspace"))
+    await bot.process_update(message_update(update_id=21, text="/workspace new-project"))
+    await bot.process_update(message_update(update_id=22, text="/workspaces"))
+    await bot.process_update(message_update(update_id=23, text="/last-operation"))
+    await bot.process_update(
+        message_update(update_id=24, text=f"/operation {RUN_ID} log")
+    )
+
+    sent = [str(item["text"]) for item in client.sent]
+    assert "Active workspace: /workspaces/todo-test" in sent
+    assert "Active workspace: /workspaces/new-project" in sent
+    assert any("/workspaces/other" in item for item in sent)
+    assert any("Changed files: todo.py" in item for item in sent)
+    assert any("Created todo.py" in item for item in sent)
+
+
+async def test_nonexistent_workspace_selection_returns_deterministic_error() -> None:
+    runtime = FakeRuntime([])
+
+    async def reject(session_id: UUID, resource: str) -> str:
+        del session_id, resource
+        raise RuntimeError("workspace does not exist")
+
+    runtime.select_workspace = reject  # type: ignore[method-assign]
+    client = FakeClient()
+    bot = TelegramBot(settings=settings(), runtime=runtime, client=client)
+
+    await bot.process_update(message_update(update_id=27, text="/workspace missing"))
+
+    assert client.sent[-1]["text"] == (
+        "Workspace selection failed: workspace does not exist"
+    )
+
+
+async def test_natural_opencode_log_request_bypasses_model_inference() -> None:
+    runtime = FakeRuntime([])
+    client = FakeClient()
+    bot = TelegramBot(settings=settings(), runtime=runtime, client=client)
+
+    await bot.process_update(
+        message_update(update_id=25, text="Show the OpenCode operation log")
+    )
+
+    assert runtime.submit_calls == []
+    assert client.sent[-1]["text"] == "#1 text: Created todo.py"
+
+
+async def test_created_file_followup_resolves_single_receipt_path() -> None:
+    runtime = FakeRuntime([completed("contents")])
+    client = FakeClient()
+    bot = TelegramBot(settings=settings(), runtime=runtime, client=client)
+
+    await bot.process_update(
+        message_update(update_id=26, text="Show me the file OpenCode created")
+    )
+
+    assert runtime.submit_calls == [
+        (
+            "Read the file 'todo.py' from the current workspace and show its contents.",
+            runtime.telegram.session_id,
+        )
+    ]
+    assert client.edited[-1]["text"] == "contents"

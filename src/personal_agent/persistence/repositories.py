@@ -20,9 +20,11 @@ from personal_agent.persistence.models import (
     ConversationMessageRole,
     SessionModel,
     SessionStatus,
+    SessionWorkspaceModel,
     TelegramActionTokenModel,
     TelegramConversationModel,
     TelegramUpdateModel,
+    ToolOperationReceiptModel,
     WorkflowRunModel,
     WorkflowRunStatus,
     utc_now,
@@ -320,6 +322,93 @@ class ConversationRepository:
         return len(messages)
 
 
+class SessionWorkspaceRepository:
+    def __init__(self, session: AsyncSession, tracker: _ChangeTracker) -> None:
+        self._session = session
+        self._tracker = tracker
+
+    async def get(self, session_id: UUID) -> SessionWorkspaceModel | None:
+        return await self._session.get(SessionWorkspaceModel, str(session_id))
+
+    async def set(self, session_id: UUID, active_workspace: str) -> SessionWorkspaceModel:
+        model = await self.get(session_id)
+        if model is None:
+            model = SessionWorkspaceModel(
+                session_id=str(session_id),
+                active_workspace=active_workspace,
+                updated_at=utc_now(),
+            )
+            self._session.add(model)
+            await self._session.flush()
+        else:
+            model.active_workspace = active_workspace
+            model.updated_at = utc_now()
+        self._tracker.state_changes += 1
+        return model
+
+
+class OperationReceiptRepository:
+    def __init__(self, session: AsyncSession, tracker: _ChangeTracker) -> None:
+        self._session = session
+        self._tracker = tracker
+
+    async def create(
+        self,
+        *,
+        session_id: UUID,
+        run_id: UUID,
+        action: ActionRequest,
+        audit_event_id: str,
+        success: bool,
+        outcome: str,
+        payload: dict[str, Any],
+    ) -> ToolOperationReceiptModel:
+        model = ToolOperationReceiptModel(
+            id=str(uuid4()),
+            session_id=str(session_id),
+            run_id=str(run_id),
+            action_id=str(action.action_id),
+            audit_event_id=audit_event_id,
+            tool_name=action.tool_name,
+            operation=action.operation,
+            resource=action.resource,
+            success=success,
+            outcome=outcome,
+            payload=payload,
+            created_at=utc_now(),
+        )
+        self._session.add(model)
+        await self._session.flush()
+        self._tracker.state_changes += 1
+        return model
+
+    async def get_for_session(
+        self,
+        *,
+        session_id: UUID,
+        run_id: UUID,
+    ) -> ToolOperationReceiptModel | None:
+        result = await self._session.execute(
+            select(ToolOperationReceiptModel).where(
+                ToolOperationReceiptModel.session_id == str(session_id),
+                ToolOperationReceiptModel.run_id == str(run_id),
+            )
+        )
+        return result.scalar_one_or_none()
+
+    async def latest_for_session(
+        self,
+        session_id: UUID,
+    ) -> ToolOperationReceiptModel | None:
+        result = await self._session.execute(
+            select(ToolOperationReceiptModel)
+            .where(ToolOperationReceiptModel.session_id == str(session_id))
+            .order_by(ToolOperationReceiptModel.created_at.desc())
+            .limit(1)
+        )
+        return result.scalar_one_or_none()
+
+
 class TelegramRepository:
     def __init__(self, session: AsyncSession, tracker: _ChangeTracker) -> None:
         self._session = session
@@ -457,6 +546,8 @@ class UnitOfWork:
         self.approvals = ApprovalRepository(self._session, self._tracker)
         self.workflow_runs = WorkflowRunRepository(self._session, self._tracker)
         self.conversations = ConversationRepository(self._session, self._tracker)
+        self.session_workspaces = SessionWorkspaceRepository(self._session, self._tracker)
+        self.operation_receipts = OperationReceiptRepository(self._session, self._tracker)
         self.telegram = TelegramRepository(self._session, self._tracker)
         self.audit = AuditRepository(self._session, self._tracker)
         self._committed = False
